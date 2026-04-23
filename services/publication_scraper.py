@@ -41,17 +41,12 @@ def extract_year(text: str):
     return None
 
 
-def normalize_publication_line(line: str) -> str:
-    line = clean_text(line)
-    line = re.sub(r"^\d+[\.\)]\s*", "", line)
-    return line.strip(" -–;,")
-
-
 def split_candidates(text: str) -> list[str]:
-    parts = re.split(r"\s(?=\d+\.)|\n|; ", text)
+    parts = re.split(r"\n|(?=\d+\.)", text)
     cleaned = []
     for part in parts:
-        part = normalize_publication_line(part)
+        part = clean_text(part)
+        part = re.sub(r"^\d+[\.\)]\s*", "", part)
         if len(part) < 25:
             continue
         cleaned.append(part)
@@ -68,12 +63,13 @@ def scrape_publications_from_profile(profile_url: str) -> list[dict]:
         "Основні публікації",
         "Наукові публікації",
         "Наукові праці",
+        "Publication",
+        "Publications",
     ]
 
     publication_block = ""
     for marker in markers:
-        pattern = rf"{marker}\s*(.+)"
-        m = re.search(pattern, full_text, re.IGNORECASE)
+        m = re.search(rf"{marker}\s*(.+)", full_text, re.IGNORECASE)
         if m:
             publication_block = m.group(1)
             break
