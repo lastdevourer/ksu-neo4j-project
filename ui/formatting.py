@@ -12,7 +12,7 @@ def apply_global_styles():
     }
 
     .main-title {
-        font-size: 2.35rem;
+        font-size: 2.2rem;
         font-weight: 800;
         margin-bottom: 0.25rem;
         letter-spacing: -0.02em;
@@ -22,6 +22,7 @@ def apply_global_styles():
         color: #94a3b8;
         font-size: 1rem;
         margin-bottom: 0.25rem;
+        line-height: 1.5;
     }
 
     .hero-box {
@@ -74,25 +75,27 @@ def build_metrics(counts: dict):
 
 
 def rename_faculty_df(df: pd.DataFrame) -> pd.DataFrame:
-    return df.rename(columns={
+    df = df.rename(columns={
         "faculty_id": "Код",
         "name": "Назва факультету",
-        "slug": "Slug",
     })
+    cols = [c for c in ["Код", "Назва факультету"] if c in df.columns]
+    return df[cols]
 
 
 def rename_department_df(df: pd.DataFrame) -> pd.DataFrame:
-    return df.rename(columns={
+    df = df.rename(columns={
         "department_id": "Код",
         "name": "Назва кафедри",
         "faculty_id": "Код факультету",
         "faculty_name": "Факультет",
-        "slug": "Slug",
     })
+    cols = [c for c in ["Код", "Назва кафедри", "Код факультету", "Факультет"] if c in df.columns]
+    return df[cols]
 
 
 def rename_teacher_df(df: pd.DataFrame) -> pd.DataFrame:
-    return df.rename(columns={
+    df = df.rename(columns={
         "teacher_id": "Код",
         "full_name": "ПІБ",
         "position": "Посада",
@@ -105,10 +108,15 @@ def rename_teacher_df(df: pd.DataFrame) -> pd.DataFrame:
         "google_scholar": "Google Scholar",
         "scopus": "Scopus",
     })
+    cols = [c for c in [
+        "Код", "ПІБ", "Посада", "Науковий ступінь", "Вчене звання",
+        "Код кафедри", "Кафедра", "Код факультету", "ORCID", "Google Scholar", "Scopus"
+    ] if c in df.columns]
+    return df[cols]
 
 
 def rename_publication_df(df: pd.DataFrame) -> pd.DataFrame:
-    return df.rename(columns={
+    df = df.rename(columns={
         "publication_id": "Код",
         "title": "Назва",
         "year": "Рік",
@@ -116,6 +124,8 @@ def rename_publication_df(df: pd.DataFrame) -> pd.DataFrame:
         "pub_type": "Тип",
         "source": "Джерело",
     })
+    cols = [c for c in ["Код", "Назва", "Рік", "DOI", "Тип", "Джерело"] if c in df.columns]
+    return df[cols]
 
 
 def rename_top_teachers_df(df: pd.DataFrame) -> pd.DataFrame:
