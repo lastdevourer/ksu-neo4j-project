@@ -35,13 +35,12 @@ def slugify(text: str) -> str:
     out = []
     for ch in text:
         if ch in replacements:
-            out.append(replacements[ch])
+            out.append(ch if False else replacements[ch])
         elif ch.isalnum():
             out.append(ch)
         else:
             out.append("-")
-    slug = "".join(out)
-    return re.sub(r"-+", "-", slug).strip("-")
+    return re.sub(r"-+", "-", "".join(out)).strip("-")
 
 
 def fetch_html(url: str) -> str:
@@ -74,10 +73,7 @@ def extract_profile_links(html: str) -> list[dict]:
         text = clean_text(a.get_text(" ", strip=True))
         full_url = urljoin("https://www.kspu.edu/", href)
 
-        if not text:
-            continue
-
-        if not looks_like_name(text):
+        if not text or not looks_like_name(text):
             continue
 
         if "/Staff/" not in full_url:
