@@ -3,6 +3,7 @@ import streamlit as st
 
 from data.seed_data import SEEDED_DEPARTMENTS, SEEDED_FACULTIES
 from services.neo4j_service import Neo4jService
+from services.teacher_scraper import STAFF_URLS, scrape_department_teachers
 from ui.formatting import (
     apply_global_styles,
     build_metrics,
@@ -17,7 +18,7 @@ from ui.formatting import (
 )
 
 st.set_page_config(
-    page_title="Академічний граф ХДУ",
+    page_title="Програмний модуль обліку наукових публікацій викладачів",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -27,10 +28,11 @@ apply_global_styles()
 st.markdown(
     """
     <div class="hero-box">
-        <div class="main-title">Академічний граф ХДУ</div>
+        <div class="main-title">Програмний модуль обліку наукових публікацій викладачів</div>
         <div class="sub-title">
-            Інформаційно-аналітична система для обліку викладачів, публікацій
-            та аналізу наукової взаємодії на основі графової моделі Neo4j.
+            Система забезпечує структуроване зберігання відомостей про факультети, кафедри,
+            викладачів і публікації, формування зв’язків співавторства та аналітичне
+            дослідження структури наукової взаємодії на основі графової моделі Neo4j.
         </div>
     </div>
     """,
@@ -168,6 +170,51 @@ with tab1:
 with tab2:
     st.markdown("### База викладачів")
 
+    department_options = service.get_department_options()
+    department_map = {
+        f"{row['department_id']} — {row['name']}": row
+        for row in department_options
+    }
+
+    auto_col1, auto_col2 = st.columns([1.35, 1])
+
+    with auto_col1:
+        selected_department = st.selectbox(
+            "Оберіть кафедру для автоматичного імпорту викладачів",
+            options=list(department_map.keys()),
+            index=None,
+            placeholder="Оберіть кафедру"
+        )
+
+    with auto_col2:
+        st.write("")
+        st.write("")
+        if st.button("Автоматично завантажити викладачів кафедри", use_container_width=True):
+            if not selected_department:
+                st.warning("Спочатку обери кафедру.")
+            else:
+                dep = department_map[selected_department]
+                try:
+                    teachers = scrape_department_teachers(
+                        department_id=dep["department_id"],
+                        faculty_id=dep["faculty_id"],
+                    )
+                    if not teachers:
+                        st.warning("Для цієї кафедри автоматичне завантаження поки недоступне або даних не знайдено.")
+                    else:
+                        service.import_teachers(teachers)
+                        st.success(f"Імпортовано викладачів: {len(teachers)}")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Помилка автоматичного імпорту: {e}")
+
+    if selected_department:
+        dep = department_map[selected_department]
+        if dep["department_id"] in STAFF_URLS:
+            st.caption(f"Джерело: {STAFF_URLS[dep['department_id']]}")
+        else:
+            st.caption("Для цієї кафедри staff-сторінка ще не підключена.")
+
     teacher_rows = service.get_teachers()
     if teacher_rows:
         df = rename_teacher_df(pd.DataFrame(teacher_rows))
@@ -175,13 +222,7 @@ with tab2:
     else:
         st.info("Викладачів ще не додано.")
 
-    department_options = service.get_department_options()
-    department_map = {
-        f"{row['department_id']} — {row['name']}": row
-        for row in department_options
-    }
-
-    with st.expander("Додати викладача"):
+    with st.expander("Додати викладача вручну"):
         next_teacher_id = service.get_next_id("T", "Teacher", "teacher_id", 4)
 
         with st.form("teacher_form", clear_on_submit=True):
@@ -196,6 +237,7 @@ with tab2:
                 options=list(department_map.keys()),
                 index=None,
                 placeholder="Оберіть кафедру",
+                key="manual_teacher_department"
             )
 
             col1, col2 = st.columns(2)
@@ -299,7 +341,7 @@ with tab3:
                             teacher_ids=author_ids,
                             topics=topics,
                         )
-                        st.success("Публікацію додано, зв’язки оновлено.")
+                        st.success("Публікацію додано, зв’язки оновлено без дублювання.")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Помилка: {e}")
