@@ -11,9 +11,9 @@ from services.neo4j_service import Neo4jService
 
 def setup_page(title: str) -> None:
     st.set_page_config(
-        page_title=f"{title} | Академічна мережа КСПУ / ХДУ",
+        page_title=title,
         layout="wide",
-        page_icon="K",
+        page_icon=":material/account_tree:",
         initial_sidebar_state="expanded",
     )
     apply_theme()
