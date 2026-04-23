@@ -3,6 +3,7 @@ import streamlit as st
 
 from data.seed_data import SEEDED_DEPARTMENTS, SEEDED_FACULTIES
 from services.neo4j_service import Neo4jService
+from services.publication_scraper import scrape_publications_from_profile
 from services.teacher_scraper import STAFF_URLS, scrape_department_teachers
 from ui.formatting import (
     apply_global_styles,
@@ -287,6 +288,79 @@ with tab2:
 with tab3:
     st.markdown("### База публікацій")
 
+    teacher_rows_full = service.get_teachers()
+    teacher_rows = [row for row in teacher_rows_full if row.get("source_url")]
+
+    teacher_profile_map = {
+        f"{row['teacher_id']} — {row['full_name']}": row
+        for row in teacher_rows
+    }
+
+    auto_p1, auto_p2 = st.columns([1.35, 1])
+
+    with auto_p1:
+        selected_teacher_for_publications = st.selectbox(
+            "Оберіть викладача для автоматичного пошуку публікацій",
+            options=list(teacher_profile_map.keys()),
+            index=None,
+            placeholder="Оберіть викладача"
+        )
+
+    with auto_p2:
+        st.write("")
+        st.write("")
+        if st.button("Автоматично знайти публікації викладача", use_container_width=True):
+            if not selected_teacher_for_publications:
+                st.warning("Спочатку обери викладача.")
+            else:
+                teacher_row = teacher_profile_map[selected_teacher_for_publications]
+                try:
+                    found = scrape_publications_from_profile(
+                        profile_url=teacher_row["source_url"]
+                    )
+                    st.session_state["found_publications"] = found
+                    st.session_state["found_publications_teacher_id"] = teacher_row["teacher_id"]
+                    st.success(f"Знайдено записів: {len(found)}")
+                except Exception as e:
+                    st.error(f"Помилка пошуку публікацій: {e}")
+
+    found_publications = st.session_state.get("found_publications", [])
+    found_teacher_id = st.session_state.get("found_publications_teacher_id")
+
+    if found_publications:
+        st.markdown("#### Попередній перегляд знайдених публікацій")
+        preview_df = pd.DataFrame(found_publications)
+        preview_df = preview_df.rename(columns={
+            "title": "Назва",
+            "year": "Рік",
+            "doi": "DOI",
+            "source": "Джерело",
+        })
+        st.dataframe(preview_df, use_container_width=True, hide_index=True)
+
+        if st.button("Імпортувати знайдені публікації", use_container_width=True):
+            try:
+                for item in found_publications:
+                    pub_id = service.get_next_id("P", "Publication", "publication_id", 5)
+                    service.upsert_publication(
+                        publication_id=pub_id,
+                        title=item.get("title", "").strip(),
+                        year=item.get("year"),
+                        doi=item.get("doi", "").strip(),
+                        pub_type=item.get("pub_type", "").strip(),
+                        source=item.get("source", "").strip(),
+                        source_url=item.get("source_url", "").strip(),
+                        notes=item.get("notes", "").strip(),
+                        teacher_ids=[found_teacher_id] if found_teacher_id else [],
+                        topics=item.get("topics", []),
+                    )
+                st.success("Публікації імпортовано без дублювання.")
+                st.session_state["found_publications"] = []
+                st.session_state["found_publications_teacher_id"] = None
+                st.rerun()
+            except Exception as e:
+                st.error(f"Помилка імпорту публікацій: {e}")
+
     publication_rows = service.get_publications()
     if publication_rows:
         df = rename_publication_df(pd.DataFrame(publication_rows))
@@ -300,7 +374,7 @@ with tab3:
         for row in teacher_options
     }
 
-    with st.expander("Додати публікацію"):
+    with st.expander("Додати публікацію вручну"):
         next_publication_id = service.get_next_id("P", "Publication", "publication_id", 5)
 
         with st.form("publication_form", clear_on_submit=True):
