@@ -51,6 +51,17 @@ def split_candidates(text: str) -> list[str]:
             continue
         cleaned.append(part)
     return cleaned
+def scrape_publications_from_teacher(teacher_row: dict) -> list[dict]:
+    publication_url = teacher_row.get("publication_url", "")
+    source_url = teacher_row.get("source_url", "")
+
+    if publication_url:
+        return scrape_publications_from_profile(publication_url)
+
+    if source_url:
+        return scrape_publications_from_profile(source_url)
+
+    return []
 
 
 def scrape_publications_from_profile(profile_url: str) -> list[dict]:
