@@ -20,6 +20,19 @@ STAFF_URLS = {
 }
 
 
+def fetch_html(url: str) -> str:
+    response = requests.get(url, headers=HEADERS, timeout=30)
+    response.raise_for_status()
+    response.encoding = response.apparent_encoding
+    return response.text
+
+
+def clean_text(text: str) -> str:
+    if not text:
+        return ""
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def slugify(text: str) -> str:
     text = text.lower().strip()
     replacements = {
@@ -32,138 +45,180 @@ def slugify(text: str) -> str:
         "ь": "", "ю": "iu", "я": "ia",
         "'": "", "’": "", "`": "", "ʼ": "",
     }
-    out = []
+    result = []
     for ch in text:
         if ch in replacements:
-            out.append(replacements[ch])
+            result.append(replacements[ch])
         elif ch.isalnum():
-            out.append(ch)
+            result.append(ch)
         else:
-            out.append("-")
-    return re.sub(r"-+", "-", "".join(out)).strip("-")
+            result.append("-")
+    return re.sub(r"-+", "-", "".join(result)).strip("-")
 
 
-def fetch_html(url: str) -> str:
-    resp = requests.get(url, headers=HEADERS, timeout=30)
-    resp.raise_for_status()
-    resp.encoding = resp.apparent_encoding
-    return resp.text
+def is_probable_name(text: str) -> bool:
+    parts = text.split()
+    if len(parts) < 2 or len(parts) > 5:
+        return False
+    return bool(re.search(r"[А-ЯІЇЄҐ][а-яіїєґ'\-]+", text))
 
 
-def clean_text(text: str) -> str:
-    if not text:
-        return ""
-    return re.sub(r"\s+", " ", text).strip()
+def is_archived_text(text: str) -> bool:
+    lowered = text.lower()
+    archive_markers = [
+        "архів",
+        "працював",
+        "працювала",
+        "по вересень",
+        "до 2021",
+        "до 2022",
+        "до 2023",
+        "до 2024",
+        "до 2025",
+        "звільнен",
+        "колиш",
+    ]
+    return any(marker in lowered for marker in archive_markers)
 
 
-def extract_inline_staff(soup: BeautifulSoup) -> list[dict]:
-    results = []
+def extract_links_map(soup: BeautifulSoup) -> tuple[dict, dict]:
+    profile_links = {}
+    publication_links = {}
 
+    for a in soup.find_all("a", href=True):
+        text = clean_text(a.get_text(" ", strip=True))
+        href = urljoin("https://www.kspu.edu/", a["href"].strip())
+        lowered = text.lower()
+
+        if is_probable_name(text):
+            profile_links[text.lower()] = href
+
+        if "publication" in lowered or "публікац" in lowered:
+            publication_links[href.lower()] = href
+
+    return profile_links, publication_links
+
+
+def extract_teacher_blocks(soup: BeautifulSoup) -> list[dict]:
+    teachers = []
     current = None
-    for tag in soup.find_all(["h3", "p", "a"]):
+
+    for tag in soup.find_all(["h1", "h2", "h3", "h4", "p", "a", "div", "span"]):
         text = clean_text(tag.get_text(" ", strip=True))
         if not text:
             continue
 
-        if tag.name == "h3":
+        if is_archived_text(text):
             if current and current.get("full_name"):
-                results.append(current)
+                current["archived"] = True
+            continue
 
-            name = text
-            name = re.sub(r"\s*\(.*?\)\s*$", "", name).strip()
+        if tag.name in {"h2", "h3", "h4"} and is_probable_name(text):
+            if current and current.get("full_name") and not current.get("archived"):
+                teachers.append(current)
 
-            if len(name.split()) >= 2:
-                current = {
-                    "full_name": name,
-                    "position": "",
-                    "academic_degree": "",
-                    "academic_title": "",
-                    "orcid": "",
-                    "google_scholar": "",
-                    "scopus": "",
-                    "publication_url": "",
-                    "source_url": "",
-                }
-            else:
-                current = None
+            current = {
+                "full_name": text,
+                "position": "",
+                "academic_degree": "",
+                "academic_title": "",
+                "orcid": "",
+                "google_scholar": "",
+                "scopus": "",
+                "source_url": "",
+                "publication_url": "",
+                "archived": False,
+            }
             continue
 
         if current is None:
             continue
 
-        if tag.name == "a":
-            href = tag.get("href", "").strip()
-            href_lower = href.lower()
-            label_lower = text.lower()
+        lowered = text.lower()
 
-            if "orcid.org" in href_lower or "orcid" in label_lower:
+        if tag.name == "a":
+            href = urljoin("https://www.kspu.edu/", tag.get("href", "").strip())
+            href_lower = href.lower()
+
+            if "orcid.org" in href_lower or "orcid" in lowered:
                 current["orcid"] = href
-            elif "scholar.google" in href_lower or "g-scholar" in label_lower or "google scholar" in label_lower:
+            elif "scholar.google" in href_lower or "google scholar" in lowered or "g-scholar" in lowered:
                 current["google_scholar"] = href
             elif "scopus" in href_lower:
                 current["scopus"] = href
-            elif "publication" in label_lower or "publication.kspu.edu" in href_lower:
+            elif "publication" in href_lower or "публікац" in lowered:
                 current["publication_url"] = href
 
-        else:
-            low = text.lower()
+            continue
 
-            if "закінчив" in low or "закінчила" in low or "спеціальність" in low or "e-mail" in low:
-                continue
-
-            if not current["position"]:
+        if not current["position"]:
+            banned_prefixes = [
+                "закінчив",
+                "закінчила",
+                "освіта",
+                "e-mail",
+                "email",
+                "робоча адреса",
+                "наукові інтереси",
+                "публікації",
+            ]
+            if not any(lowered.startswith(prefix) for prefix in banned_prefixes):
                 current["position"] = text
                 continue
 
-            if not current["academic_degree"] and (
-                "кандидат" in low or "доктор" in low or "магістр" in low
-            ):
-                current["academic_degree"] = text
-
-                if "доцент" in low or "професор" in low:
-                    parts = [x.strip() for x in text.split(",")]
-                    if len(parts) >= 2:
-                        current["academic_degree"] = ", ".join(
-                            [p for p in parts if "доцент" not in p.lower() and "професор" not in p.lower()]
-                        ).strip(", ")
-                        current["academic_title"] = ", ".join(
-                            [p for p in parts if "доцент" in p.lower() or "професор" in p.lower()]
-                        ).strip(", ")
-                continue
-
-            if not current["academic_title"] and ("доцент" in low or "професор" in low):
-                current["academic_title"] = text
-
-    if current and current.get("full_name"):
-        results.append(current)
-
-    cleaned = []
-    seen = set()
-    for row in results:
-        key = row["full_name"].lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        cleaned.append(row)
-
-    return cleaned
-
-
-def extract_profile_links(soup: BeautifulSoup) -> dict:
-    profile_links = {}
-    for a in soup.find_all("a", href=True):
-        text = clean_text(a.get_text(" ", strip=True))
-        href = urljoin("https://www.kspu.edu/", a["href"].strip())
-
-        if len(text.split()) < 2 or len(text.split()) > 5:
+        if not current["academic_degree"] and (
+            "кандидат" in lowered or "доктор" in lowered or "магістр" in lowered
+        ):
+            current["academic_degree"] = text
             continue
 
-        if not re.search(r"[А-ЯІЇЄҐ][а-яіїєґ'\-]+", text):
+        if not current["academic_title"] and (
+            "доцент" in lowered or "професор" in lowered or "старший викладач" in lowered
+        ):
+            current["academic_title"] = text
             continue
 
-        profile_links[text.lower()] = href
+    if current and current.get("full_name") and not current.get("archived"):
+        teachers.append(current)
 
-    return profile_links
+    unique = {}
+    for row in teachers:
+        key = row["full_name"].strip().lower()
+        if key not in unique:
+            unique[key] = row
+
+    return list(unique.values())
+
+
+def normalize_teachers(raw_teachers: list[dict], department_id: str, faculty_id: str) -> list[dict]:
+    normalized = []
+
+    for row in raw_teachers:
+        full_name = row.get("full_name", "").strip()
+        if not full_name:
+            continue
+
+        if is_archived_text(full_name):
+            continue
+
+        teacher_id = f"T_{department_id}_{slugify(full_name)}"
+
+        normalized.append({
+            "teacher_id": teacher_id,
+            "full_name": full_name,
+            "position": row.get("position", "").strip(),
+            "academic_degree": row.get("academic_degree", "").strip(),
+            "academic_title": row.get("academic_title", "").strip(),
+            "department_id": department_id,
+            "faculty_id": faculty_id,
+            "orcid": row.get("orcid", "").strip(),
+            "google_scholar": row.get("google_scholar", "").strip(),
+            "scopus": row.get("scopus", "").strip(),
+            "source_url": row.get("source_url", "").strip(),
+            "publication_url": row.get("publication_url", "").strip(),
+        })
+
+    return normalized
 
 
 def scrape_department_teachers(department_id: str, faculty_id: str) -> list[dict]:
@@ -173,55 +228,35 @@ def scrape_department_teachers(department_id: str, faculty_id: str) -> list[dict
     html = fetch_html(STAFF_URLS[department_id])
     soup = BeautifulSoup(html, "html.parser")
 
-    inline_rows = extract_inline_staff(soup)
-    profile_map = extract_profile_links(soup)
+    profile_links, _ = extract_links_map(soup)
+    teacher_blocks = extract_teacher_blocks(soup)
 
-    results = []
-    for row in inline_rows:
-        full_name = row["full_name"]
-        profile_url = profile_map.get(full_name.lower(), STAFF_URLS[department_id])
+    for row in teacher_blocks:
+        profile_url = profile_links.get(row["full_name"].lower(), "")
+        if profile_url:
+            row["source_url"] = profile_url
+        else:
+            row["source_url"] = STAFF_URLS[department_id]
 
-        teacher_id = f"T_{department_id}_{slugify(full_name)}"
+    return normalize_teachers(teacher_blocks, department_id, faculty_id)
 
-        results.append({
-            "teacher_id": teacher_id,
-            "full_name": full_name,
-            "position": row["position"],
-            "academic_degree": row["academic_degree"],
-            "academic_title": row["academic_title"],
-            "department_id": department_id,
-            "faculty_id": faculty_id,
-            "orcid": row["orcid"],
-            "google_scholar": row["google_scholar"],
-            "scopus": row["scopus"],
-            "source_url": profile_url,
-            "publication_url": row["publication_url"],
-        })
-    def scrape_all_f07_teachers() -> list[dict]:
-    all_rows = []
 
-    department_map = {
+def scrape_all_f07_teachers() -> list[dict]:
+    result = []
+    departments = {
         "D001": "F07",
         "D002": "F07",
         "D003": "F07",
     }
 
-    for department_id, faculty_id in department_map.items():
-        try:
-            rows = scrape_department_teachers(
-                department_id=department_id,
-                faculty_id=faculty_id,
-            )
-            all_rows.extend(rows)
-        except Exception:
-            continue
+    for department_id, faculty_id in departments.items():
+        rows = scrape_department_teachers(department_id, faculty_id)
+        result.extend(rows)
 
     unique = {}
-    for row in all_rows:
-        key = (row.get("department_id", ""), row.get("full_name", "").strip().lower())
+    for row in result:
+        key = (row["department_id"], row["full_name"].lower())
         if key not in unique:
             unique[key] = row
 
     return list(unique.values())
-
-    return results
