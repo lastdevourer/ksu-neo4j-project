@@ -13,11 +13,35 @@ HEADERS = {
     )
 }
 
-
-DEPARTMENT_STAFF_URLS = {
+STAFF_URLS = {
     "D001": "https://www.kspu.edu/About/Faculty/FPhysMathemInformatics/ChairAlgGeomMathAnalysis/Staff.aspx",
+    "D002": "https://www.kspu.edu/About/Faculty/FPhysMathemInformatics/ChairPhysics/Staff.aspx",
     "D003": "https://www.kspu.edu/About/Faculty/FPhysMathemInformatics/ChairInformatics/Staff.aspx",
 }
+
+
+def slugify(text: str) -> str:
+    text = text.lower().strip()
+    replacements = {
+        "а": "a", "б": "b", "в": "v", "г": "h", "ґ": "g",
+        "д": "d", "е": "e", "є": "ie", "ж": "zh", "з": "z",
+        "и": "y", "і": "i", "ї": "i", "й": "i", "к": "k",
+        "л": "l", "м": "m", "н": "n", "о": "o", "п": "p",
+        "р": "r", "с": "s", "т": "t", "у": "u", "ф": "f",
+        "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "shch",
+        "ь": "", "ю": "iu", "я": "ia",
+        "'": "", "’": "", "`": "", "ʼ": "",
+    }
+    out = []
+    for ch in text:
+        if ch in replacements:
+            out.append(replacements[ch])
+        elif ch.isalnum():
+            out.append(ch)
+        else:
+            out.append("-")
+    slug = "".join(out)
+    return re.sub(r"-+", "-", slug).strip("-")
 
 
 def fetch_html(url: str) -> str:
@@ -33,6 +57,13 @@ def clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def looks_like_name(text: str) -> bool:
+    parts = text.split()
+    if len(parts) < 2 or len(parts) > 5:
+        return False
+    return bool(re.search(r"[А-ЯІЇЄҐ][а-яіїєґ'\-]+", text))
+
+
 def extract_profile_links(html: str) -> list[dict]:
     soup = BeautifulSoup(html, "html.parser")
     rows = []
@@ -41,17 +72,13 @@ def extract_profile_links(html: str) -> list[dict]:
     for a in soup.find_all("a", href=True):
         href = a["href"].strip()
         text = clean_text(a.get_text(" ", strip=True))
+        full_url = urljoin("https://www.kspu.edu/", href)
 
         if not text:
             continue
 
-        if len(text.split()) < 2:
+        if not looks_like_name(text):
             continue
-
-        if not re.search(r"[А-ЯІЇЄҐ][а-яіїєґ'\-]+", text):
-            continue
-
-        full_url = urljoin("https://www.kspu.edu/", href)
 
         if "/Staff/" not in full_url:
             continue
@@ -63,7 +90,7 @@ def extract_profile_links(html: str) -> list[dict]:
 
         rows.append({
             "full_name": text,
-            "profile_url": full_url
+            "profile_url": full_url,
         })
 
     return rows
@@ -71,7 +98,7 @@ def extract_profile_links(html: str) -> list[dict]:
 
 def parse_profile(html: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
-    text = clean_text(soup.get_text(" ", strip=True))
+    full_text = clean_text(soup.get_text(" ", strip=True))
 
     position = ""
     academic_degree = ""
@@ -80,27 +107,40 @@ def parse_profile(html: str) -> dict:
     google_scholar = ""
     scopus = ""
 
-    pos_match = re.search(r"Посада[:\-]?\s*(.+?)(?=Науковий ступінь|Вчене звання|Робоча адреса|E-mail|Освіта)", text, re.IGNORECASE)
+    pos_match = re.search(
+        r"Посада[:\-]?\s*(.+?)(?=Науковий ступінь|Вчене звання|Робоча адреса|E-mail|Освіта|Наукові інтереси|Публікації)",
+        full_text,
+        re.IGNORECASE
+    )
     if pos_match:
         position = clean_text(pos_match.group(1))
 
-    deg_match = re.search(r"Науковий ступінь[:\-]?\s*(.+?)(?=Вчене звання|Робоча адреса|E-mail|Освіта)", text, re.IGNORECASE)
-    if deg_match:
-        academic_degree = clean_text(deg_match.group(1))
+    degree_match = re.search(
+        r"Науковий ступінь[:\-]?\s*(.+?)(?=Вчене звання|Робоча адреса|E-mail|Освіта|Наукові інтереси|Публікації)",
+        full_text,
+        re.IGNORECASE
+    )
+    if degree_match:
+        academic_degree = clean_text(degree_match.group(1))
 
-    title_match = re.search(r"Вчене звання[:\-]?\s*(.+?)(?=Робоча адреса|E-mail|Освіта)", text, re.IGNORECASE)
+    title_match = re.search(
+        r"Вчене звання[:\-]?\s*(.+?)(?=Робоча адреса|E-mail|Освіта|Наукові інтереси|Публікації)",
+        full_text,
+        re.IGNORECASE
+    )
     if title_match:
         academic_title = clean_text(title_match.group(1))
 
     for a in soup.find_all("a", href=True):
         href = a["href"].strip()
         label = clean_text(a.get_text(" ", strip=True)).lower()
+        href_lower = href.lower()
 
-        if "orcid.org" in href.lower() or "orcid" in label:
+        if "orcid.org" in href_lower or "orcid" in label:
             orcid = href
-        elif "scholar.google" in href.lower() or "google scholar" in label:
+        elif "scholar.google" in href_lower or "google scholar" in label:
             google_scholar = href
-        elif "scopus" in href.lower():
+        elif "scopus" in href_lower:
             scopus = href
 
     return {
@@ -114,30 +154,34 @@ def parse_profile(html: str) -> dict:
 
 
 def scrape_department_teachers(department_id: str, faculty_id: str) -> list[dict]:
-    if department_id not in DEPARTMENT_STAFF_URLS:
+    if department_id not in STAFF_URLS:
         return []
 
-    staff_url = DEPARTMENT_STAFF_URLS[department_id]
-    html = fetch_html(staff_url)
+    html = fetch_html(STAFF_URLS[department_id])
     people = extract_profile_links(html)
 
     results = []
-    for idx, person in enumerate(people, start=1):
+    for person in people:
+        details = {
+            "position": "",
+            "academic_degree": "",
+            "academic_title": "",
+            "orcid": "",
+            "google_scholar": "",
+            "scopus": "",
+        }
+
         try:
             profile_html = fetch_html(person["profile_url"])
-            details = parse_profile(profile_html)
+            parsed = parse_profile(profile_html)
+            details.update(parsed)
         except Exception:
-            details = {
-                "position": "",
-                "academic_degree": "",
-                "academic_title": "",
-                "orcid": "",
-                "google_scholar": "",
-                "scopus": "",
-            }
+            pass
+
+        teacher_id = f"T_{department_id}_{slugify(person['full_name'])}"
 
         results.append({
-            "teacher_id": f"{department_id.replace('D', 'T')}{idx:03d}",
+            "teacher_id": teacher_id,
             "full_name": person["full_name"],
             "position": details["position"],
             "academic_degree": details["academic_degree"],
