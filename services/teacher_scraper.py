@@ -197,5 +197,31 @@ def scrape_department_teachers(department_id: str, faculty_id: str) -> list[dict
             "source_url": profile_url,
             "publication_url": row["publication_url"],
         })
+    def scrape_all_f07_teachers() -> list[dict]:
+    all_rows = []
+
+    department_map = {
+        "D001": "F07",
+        "D002": "F07",
+        "D003": "F07",
+    }
+
+    for department_id, faculty_id in department_map.items():
+        try:
+            rows = scrape_department_teachers(
+                department_id=department_id,
+                faculty_id=faculty_id,
+            )
+            all_rows.extend(rows)
+        except Exception:
+            continue
+
+    unique = {}
+    for row in all_rows:
+        key = (row.get("department_id", ""), row.get("full_name", "").strip().lower())
+        if key not in unique:
+            unique[key] = row
+
+    return list(unique.values())
 
     return results
