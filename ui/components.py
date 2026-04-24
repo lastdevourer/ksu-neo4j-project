@@ -630,6 +630,7 @@ def render_key_value_card(title: str, items: list[tuple[str, str]]) -> None:
 def _build_service(uri: str, user: str, password: str, database: str) -> Neo4jService:
     service = Neo4jService(uri=uri, user=user, password=password, database=database)
     service.verify_connection()
+    service.prepare_database()
     return service
 
 
