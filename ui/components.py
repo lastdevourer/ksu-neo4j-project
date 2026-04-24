@@ -542,16 +542,16 @@ def apply_theme() -> None:
 def render_header(title: str, subtitle: str = "", kicker: str = "") -> None:
     kicker_markup = f'<div class="hero-kicker">{escape(kicker)}</div>' if kicker else ""
     subtitle_markup = f'<div class="hero-subtitle">{escape(subtitle)}</div>' if subtitle else ""
-    st.markdown(
-        f"""
-        <div class="hero-card">
-            {kicker_markup}
-            <div class="hero-title">{escape(title)}</div>
-            {subtitle_markup}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+
+    html = f"""
+    <div class="hero-card">
+        {kicker_markup}
+        <div class="hero-title">{escape(title)}</div>
+        {subtitle_markup}
+    </div>
+    """
+
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def render_info_card(title: str, body: str) -> None:
