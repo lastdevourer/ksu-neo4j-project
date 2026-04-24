@@ -300,6 +300,39 @@ class Neo4jService:
             {"limit": int(limit)},
         )
 
+    def get_teacher_import_options(self, department_code: str = "", limit: int = 200) -> list[dict[str, Any]]:
+        return self.run_query(
+            """
+            MATCH (t:Teacher)
+            OPTIONAL MATCH (d:Department)-[:HAS_TEACHER]->(t)
+            OPTIONAL MATCH (f:Faculty)-[:HAS_DEPARTMENT]->(d)
+            WITH
+                t,
+                d,
+                f,
+                CASE WHEN coalesce(t.orcid, "") <> "" THEN 1 ELSE 0 END +
+                CASE WHEN coalesce(t.google_scholar, "") <> "" THEN 1 ELSE 0 END +
+                CASE WHEN coalesce(t.scopus, "") <> "" THEN 1 ELSE 0 END +
+                CASE WHEN coalesce(t.web_of_science, "") <> "" THEN 1 ELSE 0 END AS profile_score
+            WHERE ($department_code = "" OR coalesce(d.code, d.department_id) = $department_code)
+            RETURN
+                coalesce(t.id, t.teacher_id) AS id,
+                coalesce(t.full_name, t.name) AS full_name,
+                coalesce(d.code, d.department_id, t.department_code, t.department_id) AS department_code,
+                coalesce(d.name, t.department_name, "") AS department_name,
+                coalesce(f.name, "") AS faculty_name,
+                coalesce(t.orcid, "") AS orcid,
+                coalesce(t.google_scholar, "") AS google_scholar,
+                coalesce(t.scopus, "") AS scopus,
+                coalesce(t.web_of_science, "") AS web_of_science,
+                coalesce(t.profile_url, "") AS profile_url,
+                profile_score
+            ORDER BY profile_score DESC, full_name
+            LIMIT $limit
+            """,
+            {"department_code": department_code.strip(), "limit": int(limit)},
+        )
+
     def get_teacher_profile(self, teacher_id: str) -> dict[str, Any] | None:
         rows = self.run_query(
             """
