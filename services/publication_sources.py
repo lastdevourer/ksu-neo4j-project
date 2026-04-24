@@ -12,11 +12,31 @@ OPENALEX_API = "https://api.openalex.org/works"
 
 
 TRANSLIT_VARIANTS = {
+    "а": ["a"], "б": ["b"], "в": ["v"], "г": ["h", "g"], "ґ": ["g"],
+    "д": ["d"], "е": ["e"], "є": ["ye", "ie"], "ж": ["zh"], "з": ["z"],
+    "и": ["y", "i"], "і": ["i"], "ї": ["yi", "i"], "й": ["i", "y"],
+    "к": ["k"], "л": ["l"], "м": ["m"], "н": ["n"], "о": ["o"],
+    "п": ["p"], "р": ["r"], "с": ["s"], "т": ["t"], "у": ["u"],
+    "ф": ["f"], "х": ["kh", "h"], "ц": ["ts", "c"], "ч": ["ch"],
+    "ш": ["sh"], "щ": ["shch"], "ю": ["yu", "iu"], "я": ["ya", "ia"],
+    "ь": [""], "ъ": [""],
+}
+
+
+SPECIAL_NAME_VARIANTS = {
     "геннадій": ["hennadii", "gennadiy", "gennady", "gennadii", "henadii"],
     "геннадий": ["hennadii", "gennadiy", "gennady", "gennadii", "henadii"],
     "михайлович": ["mykhailovych", "mikhailovich", "mykhaylovych"],
-    "краўцов": ["kravtsov", "kravcov"],
-    "кравцов": ["kravtsov", "kravcov"],
+    "олександр": ["oleksandr", "alexander", "alexandr"],
+    "александр": ["oleksandr", "alexander", "alexandr"],
+    "олександра": ["oleksandra", "alexandra"],
+    "сергій": ["serhii", "sergii", "sergey", "sergei"],
+    "сергей": ["serhii", "sergii", "sergey", "sergei"],
+    "віталій": ["vitalii", "vitaliy", "vitaly"],
+    "виталий": ["vitalii", "vitaliy", "vitaly"],
+    "наталія": ["nataliia", "natalia", "nataliya"],
+    "татьяна": ["tetiana", "tatyana", "tatiana"],
+    "тетяна": ["tetiana", "tetyana", "tatiana"],
 }
 
 
@@ -32,10 +52,12 @@ def _get_json(url: str, timeout: int = 25) -> dict[str, Any]:
 def normalize_doi(doi: str | None) -> str:
     if not doi:
         return ""
-    value = doi.strip()
-    value = value.replace("https://doi.org/", "")
-    value = value.replace("http://doi.org/", "")
-    return value.lower()
+    return (
+        doi.strip()
+        .replace("https://doi.org/", "")
+        .replace("http://doi.org/", "")
+        .lower()
+    )
 
 
 def clean_title(title: str | None) -> str:
@@ -64,21 +86,34 @@ def normalize_person_name(value: str | None) -> str:
 
     value = value.lower().replace("’", "'").replace("ʼ", "'")
     value = re.sub(r"[^a-zа-яіїєґё\s'-]", " ", value, flags=re.IGNORECASE)
-    value = re.sub(r"\s+", " ", value).strip()
-    return value
+    return re.sub(r"\s+", " ", value).strip()
 
 
 def split_name(value: str | None) -> list[str]:
-    normalized = normalize_person_name(value)
-    return [part for part in re.split(r"\s+", normalized) if part]
+    return [part for part in normalize_person_name(value).split(" ") if part]
+
+
+def simple_translit(value: str) -> str:
+    result = ""
+
+    for char in normalize_person_name(value):
+        if char in TRANSLIT_VARIANTS:
+            result += TRANSLIT_VARIANTS[char][0]
+        else:
+            result += char
+
+    return result.strip()
 
 
 def get_name_variants(name_part: str) -> set[str]:
     part = normalize_person_name(name_part)
-    variants = {part}
 
-    if part in TRANSLIT_VARIANTS:
-        variants.update(TRANSLIT_VARIANTS[part])
+    if not part:
+        return set()
+
+    variants = {part}
+    variants.add(simple_translit(part))
+    variants.update(SPECIAL_NAME_VARIANTS.get(part, []))
 
     return {variant for variant in variants if variant}
 
@@ -91,58 +126,78 @@ def make_search_queries(teacher_name: str) -> list[str]:
 
     surname = parts[0]
     given = parts[1] if len(parts) > 1 else ""
-
-    queries = {teacher_name}
+    patronymic = parts[2] if len(parts) > 2 else ""
 
     surname_variants = get_name_variants(surname)
     given_variants = get_name_variants(given)
+    patronymic_variants = get_name_variants(patronymic)
 
-    for s in surname_variants:
-        queries.add(s)
+    queries = {teacher_name}
 
-        for g in given_variants:
-            queries.add(f"{s} {g}")
-            queries.add(f"{g} {s}")
-            queries.add(f"{s} {g[:1]}")
-            queries.add(f"{g[:1]} {s}")
+    for surname_variant in surname_variants:
+        queries.add(surname_variant)
+
+        for given_variant in given_variants:
+            queries.add(f"{surname_variant} {given_variant}")
+            queries.add(f"{given_variant} {surname_variant}")
+            queries.add(f"{surname_variant} {given_variant[:1]}")
+            queries.add(f"{given_variant[:1]} {surname_variant}")
+
+            for patronymic_variant in patronymic_variants:
+                queries.add(f"{surname_variant} {given_variant} {patronymic_variant}")
+                queries.add(f"{surname_variant} {given_variant[:1]} {patronymic_variant[:1]}")
+                queries.add(f"{surname_variant} {given_variant[:1]}.{patronymic_variant[:1]}.")
 
     return [query for query in queries if query.strip()]
 
 
+def token_matches(value: str, variants: set[str], allow_initial: bool = True) -> bool:
+    tokens = split_name(value)
+    text = " ".join(tokens)
+
+    for variant in variants:
+        if not variant:
+            continue
+
+        if variant in tokens or variant in text:
+            return True
+
+        if allow_initial and len(variant) > 0:
+            for token in tokens:
+                if token.startswith(variant[:1]):
+                    return True
+
+    return False
+
+
 def author_matches_teacher(author_name: str, teacher_name: str) -> bool:
     teacher_parts = split_name(teacher_name)
-    author_parts = split_name(author_name)
 
-    if not teacher_parts or not author_parts:
+    if not teacher_parts:
         return False
 
-    teacher_surname = teacher_parts[0]
-    teacher_given = teacher_parts[1] if len(teacher_parts) > 1 else ""
+    surname = teacher_parts[0]
+    given = teacher_parts[1] if len(teacher_parts) > 1 else ""
+    patronymic = teacher_parts[2] if len(teacher_parts) > 2 else ""
 
-    surname_variants = get_name_variants(teacher_surname)
-    given_variants = get_name_variants(teacher_given)
+    surname_variants = get_name_variants(surname)
+    given_variants = get_name_variants(given)
+    patronymic_variants = get_name_variants(patronymic)
 
-    author_text = " ".join(author_parts)
-
-    surname_ok = any(
-        variant in author_parts or variant in author_text
-        for variant in surname_variants
-    )
-
+    surname_ok = token_matches(author_name, surname_variants, allow_initial=False)
     if not surname_ok:
         return False
 
-    if not given_variants:
-        return True
+    given_ok = True
+    if given_variants:
+        given_ok = token_matches(author_name, given_variants, allow_initial=True)
 
-    given_ok = any(
-        variant in author_parts
-        or variant in author_text
-        or any(part.startswith(variant[:1]) for part in author_parts if variant)
-        for variant in given_variants
-    )
+    if not given_ok:
+        return False
 
-    return given_ok
+    # Отчество не обязательно, потому что в международных базах его часто нет.
+    # Но если оно совпало — это просто усиливает уверенность.
+    return True
 
 
 def make_publication_id(title: str, year: int | None, doi: str = "", openalex_id: str = "") -> str:
@@ -158,15 +213,16 @@ def make_publication_id(title: str, year: int | None, doi: str = "", openalex_id
 
 def parse_openalex_item(item: dict[str, Any]) -> dict[str, Any] | None:
     title = clean_title(item.get("title"))
+
     if not title:
         return None
 
-    authorships = item.get("authorships") or []
     authors = []
 
-    for authorship in authorships:
+    for authorship in item.get("authorships") or []:
         author = authorship.get("author") or {}
         display_name = title_case_name(author.get("display_name"))
+
         if display_name and display_name not in authors:
             authors.append(display_name)
 
@@ -174,12 +230,9 @@ def parse_openalex_item(item: dict[str, Any]) -> dict[str, Any] | None:
     doi = normalize_doi(item.get("doi"))
     openalex_id = item.get("id", "")
 
-    source = ""
     primary_location = item.get("primary_location") or {}
     source_obj = primary_location.get("source") or {}
-
-    if source_obj:
-        source = source_obj.get("display_name") or ""
+    source = source_obj.get("display_name") if source_obj else ""
 
     pub_type = item.get("type") or item.get("type_crossref") or ""
 
@@ -226,6 +279,7 @@ def search_openalex_publications(
 
         for item in data.get("results", []):
             publication = parse_openalex_item(item)
+
             if not publication:
                 continue
 
