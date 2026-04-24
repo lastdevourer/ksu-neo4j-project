@@ -11,7 +11,16 @@ from typing import Any
 OPENALEX_API = "https://api.openalex.org/works"
 
 
-def _get_json(url: str, timeout: int = 20) -> dict[str, Any]:
+TRANSLIT_VARIANTS = {
+    "геннадій": ["hennadii", "gennadiy", "gennady", "gennadii", "henadii"],
+    "геннадий": ["hennadii", "gennadiy", "gennady", "gennadii", "henadii"],
+    "михайлович": ["mykhailovych", "mikhailovich", "mykhaylovych"],
+    "краўцов": ["kravtsov", "kravcov"],
+    "кравцов": ["kravtsov", "kravcov"],
+}
+
+
+def _get_json(url: str, timeout: int = 25) -> dict[str, Any]:
     request = urllib.request.Request(
         url,
         headers={"User-Agent": "kspu-neo4j-publication-import/1.0"},
@@ -64,14 +73,43 @@ def split_name(value: str | None) -> list[str]:
     return [part for part in re.split(r"\s+", normalized) if part]
 
 
-def author_matches_teacher(author_name: str, teacher_name: str) -> bool:
-    """
-    Более строгая проверка, чтобы не цеплять чужих однофамильцев из OpenAlex.
+def get_name_variants(name_part: str) -> set[str]:
+    part = normalize_person_name(name_part)
+    variants = {part}
 
-    Для украинских/русских ФИО обычно нужно:
-    - совпадение фамилии;
-    - плюс совпадение имени или инициалов.
-    """
+    if part in TRANSLIT_VARIANTS:
+        variants.update(TRANSLIT_VARIANTS[part])
+
+    return {variant for variant in variants if variant}
+
+
+def make_search_queries(teacher_name: str) -> list[str]:
+    parts = split_name(teacher_name)
+
+    if not parts:
+        return []
+
+    surname = parts[0]
+    given = parts[1] if len(parts) > 1 else ""
+
+    queries = {teacher_name}
+
+    surname_variants = get_name_variants(surname)
+    given_variants = get_name_variants(given)
+
+    for s in surname_variants:
+        queries.add(s)
+
+        for g in given_variants:
+            queries.add(f"{s} {g}")
+            queries.add(f"{g} {s}")
+            queries.add(f"{s} {g[:1]}")
+            queries.add(f"{g[:1]} {s}")
+
+    return [query for query in queries if query.strip()]
+
+
+def author_matches_teacher(author_name: str, teacher_name: str) -> bool:
     teacher_parts = split_name(teacher_name)
     author_parts = split_name(author_name)
 
@@ -81,16 +119,28 @@ def author_matches_teacher(author_name: str, teacher_name: str) -> bool:
     teacher_surname = teacher_parts[0]
     teacher_given = teacher_parts[1] if len(teacher_parts) > 1 else ""
 
-    author_joined = " ".join(author_parts)
+    surname_variants = get_name_variants(teacher_surname)
+    given_variants = get_name_variants(teacher_given)
 
-    surname_ok = teacher_surname in author_parts or teacher_surname in author_joined
+    author_text = " ".join(author_parts)
+
+    surname_ok = any(
+        variant in author_parts or variant in author_text
+        for variant in surname_variants
+    )
+
     if not surname_ok:
         return False
 
-    if not teacher_given:
+    if not given_variants:
         return True
 
-    given_ok = teacher_given in author_parts or teacher_given[:1] in [part[:1] for part in author_parts if part]
+    given_ok = any(
+        variant in author_parts
+        or variant in author_text
+        or any(part.startswith(variant[:1]) for part in author_parts if variant)
+        for variant in given_variants
+    )
 
     return given_ok
 
@@ -106,73 +156,88 @@ def make_publication_id(title: str, year: int | None, doi: str = "", openalex_id
     return "pub:" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
 
 
+def parse_openalex_item(item: dict[str, Any]) -> dict[str, Any] | None:
+    title = clean_title(item.get("title"))
+    if not title:
+        return None
+
+    authorships = item.get("authorships") or []
+    authors = []
+
+    for authorship in authorships:
+        author = authorship.get("author") or {}
+        display_name = title_case_name(author.get("display_name"))
+        if display_name and display_name not in authors:
+            authors.append(display_name)
+
+    year = item.get("publication_year")
+    doi = normalize_doi(item.get("doi"))
+    openalex_id = item.get("id", "")
+
+    source = ""
+    primary_location = item.get("primary_location") or {}
+    source_obj = primary_location.get("source") or {}
+
+    if source_obj:
+        source = source_obj.get("display_name") or ""
+
+    pub_type = item.get("type") or item.get("type_crossref") or ""
+
+    return {
+        "id": make_publication_id(title, year, doi=doi, openalex_id=openalex_id),
+        "title": title,
+        "year": int(year) if year else None,
+        "doi": doi,
+        "openalex_id": openalex_id,
+        "source": source or "OpenAlex",
+        "pub_type": pub_type,
+        "authors": authors,
+        "external_url": item.get("id", ""),
+        "cited_by_count": int(item.get("cited_by_count") or 0),
+    }
+
+
 def search_openalex_publications(
     teacher_name: str,
     from_year: int | None = None,
     per_page: int = 10,
 ) -> list[dict[str, Any]]:
     teacher_name = title_case_name(teacher_name)
+    queries = make_search_queries(teacher_name)
 
-    params = {
-        "search": teacher_name,
-        "per-page": str(per_page),
-        "sort": "publication_year:desc",
-    }
+    found: dict[str, dict[str, Any]] = {}
 
-    if from_year:
-        params["filter"] = f"from_publication_date:{from_year}-01-01"
+    for search_query in queries:
+        params = {
+            "search": search_query,
+            "per-page": str(per_page),
+            "sort": "publication_year:desc",
+        }
 
-    query = urllib.parse.urlencode(params)
-    url = f"{OPENALEX_API}?{query}"
+        if from_year:
+            params["filter"] = f"from_publication_date:{from_year}-01-01"
 
-    data = _get_json(url)
-    results = data.get("results", [])
+        url = f"{OPENALEX_API}?{urllib.parse.urlencode(params)}"
 
-    publications: list[dict[str, Any]] = []
-
-    for item in results:
-        title = clean_title(item.get("title"))
-        if not title:
+        try:
+            data = _get_json(url)
+        except Exception:
             continue
 
-        authorships = item.get("authorships") or []
-        authors = []
+        for item in data.get("results", []):
+            publication = parse_openalex_item(item)
+            if not publication:
+                continue
 
-        for authorship in authorships:
-            author = authorship.get("author") or {}
-            display_name = title_case_name(author.get("display_name"))
-            if display_name:
-                authors.append(display_name)
+            authors = publication.get("authors", [])
 
-        if not any(author_matches_teacher(author, teacher_name) for author in authors):
-            continue
+            if authors and not any(author_matches_teacher(author, teacher_name) for author in authors):
+                continue
 
-        year = item.get("publication_year")
-        doi = normalize_doi(item.get("doi"))
-        openalex_id = item.get("id", "")
+            found[publication["id"]] = publication
 
-        source = ""
-        primary_location = item.get("primary_location") or {}
-        source_obj = primary_location.get("source") or {}
-
-        if source_obj:
-            source = source_obj.get("display_name") or ""
-
-        pub_type = item.get("type") or item.get("type_crossref") or ""
-
-        publications.append(
-            {
-                "id": make_publication_id(title, year, doi=doi, openalex_id=openalex_id),
-                "title": title,
-                "year": int(year) if year else None,
-                "doi": doi,
-                "openalex_id": openalex_id,
-                "source": source or "OpenAlex",
-                "pub_type": pub_type,
-                "authors": authors,
-                "external_url": item.get("id", ""),
-                "cited_by_count": int(item.get("cited_by_count") or 0),
-            }
-        )
-
-    return publications
+    return sorted(
+        found.values(),
+        key=lambda row: (row.get("year") or 0, row.get("cited_by_count") or 0),
+        reverse=True,
+    )
