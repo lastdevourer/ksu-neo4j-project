@@ -159,6 +159,7 @@ def render_import_block(service) -> None:
                     scholar_id = best_profile["scholar_id"]
                     scholar_url = best_profile["profile_url"]
                     save_teacher_scholar_profile(service, selected_teacher["id"], scholar_url)
+                    st.info(f"Автоматично знайдено Scholar-профіль: {scholar_url}")
 
             if not scholar_id:
                 st.error( 
