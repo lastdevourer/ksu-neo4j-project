@@ -15,7 +15,7 @@ class Neo4jConfig:
     uri: str
     user: str
     password: str
-    database: str = "neo4j"
+    database: str = ""
 
 
 def _read_streamlit_secret(key: str) -> str:
@@ -30,12 +30,12 @@ def get_neo4j_config() -> Neo4jConfig | None:
     uri = _read_streamlit_secret("NEO4J_URI") or os.getenv("NEO4J_URI", "").strip()
     user = _read_streamlit_secret("NEO4J_USER") or os.getenv("NEO4J_USER", "").strip()
     password = _read_streamlit_secret("NEO4J_PASSWORD") or os.getenv("NEO4J_PASSWORD", "").strip()
-    database = _read_streamlit_secret("NEO4J_DATABASE") or os.getenv("NEO4J_DATABASE", "neo4j").strip()
+    database = _read_streamlit_secret("NEO4J_DATABASE") or os.getenv("NEO4J_DATABASE", "").strip()
 
     if not (uri and user and password):
         return None
 
-    return Neo4jConfig(uri=uri, user=user, password=password, database=database or "neo4j")
+    return Neo4jConfig(uri=uri, user=user, password=password, database=database)
 
 
 def get_connection_help_text() -> str:
@@ -45,5 +45,5 @@ def get_connection_help_text() -> str:
         "`NEO4J_URI`\n"
         "`NEO4J_USER`\n"
         "`NEO4J_PASSWORD`\n"
-        "`NEO4J_DATABASE` (необов'язково, типово `neo4j`)"
+        "`NEO4J_DATABASE` (необов'язково; якщо є помилка маршрутизації, краще прибрати цей параметр і дати Aura вибрати домашню базу автоматично)"
     )

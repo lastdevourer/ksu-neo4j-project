@@ -32,7 +32,7 @@ LEGACY_MIGRATION_STATEMENTS = [
 
 
 class Neo4jService:
-    def __init__(self, uri: str, user: str, password: str, database: str = "neo4j"):
+    def __init__(self, uri: str, user: str, password: str, database: str = ""):
         self.driver = GraphDatabase.driver(uri, auth=(user, password))
         self.database = database
 
@@ -41,6 +41,8 @@ class Neo4jService:
 
     def verify_connection(self) -> None:
         self.driver.verify_connectivity()
+        with self.driver.session(**self._session_kwargs()) as session:
+            session.run("RETURN 1 AS ok").consume()
 
     def run_query(self, query: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         with self.driver.session(**self._session_kwargs()) as session:

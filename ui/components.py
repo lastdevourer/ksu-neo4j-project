@@ -229,6 +229,13 @@ def require_service() -> Neo4jService:
         return _build_service(config.uri, config.user, config.password, config.database)
     except Exception as exc:
         st.error(f"Не вдалося підключитися до Neo4j Aura: {exc}")
+        if config.database:
+            st.caption(
+                "Порада: якщо в `Secrets` вказано `NEO4J_DATABASE`, перевірте назву бази або тимчасово приберіть "
+                "цей параметр, щоб Aura використала домашню базу автоматично."
+            )
+        else:
+            st.caption("Перевірте `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` і права доступу до Neo4j Aura.")
         st.stop()
 
 

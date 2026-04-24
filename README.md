@@ -33,7 +33,7 @@ Streamlit MVP для дипломної теми:
 NEO4J_URI = "neo4j+s://your-aura-instance.databases.neo4j.io"
 NEO4J_USER = "neo4j"
 NEO4J_PASSWORD = "your-password"
-NEO4J_DATABASE = "neo4j"
+# NEO4J_DATABASE = "neo4j"
 ```
 
 Локально ті самі параметри можна додати через `.env` або `st.secrets`:
@@ -42,8 +42,10 @@ NEO4J_DATABASE = "neo4j"
 NEO4J_URI=neo4j+s://...
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=your-password
-NEO4J_DATABASE=neo4j
+# NEO4J_DATABASE=neo4j
 ```
+
+`NEO4J_DATABASE` не є обов'язковим. Якщо Neo4j Aura повертає помилку маршрутизації або `ClientError` під час першого запиту, приберіть цей параметр із секретів або вкажіть точну назву домашньої бази.
 
 ## Запуск
 
