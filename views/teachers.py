@@ -15,10 +15,7 @@ from ui.formatters import coauthors_dataframe, teacher_publications_dataframe, t
 
 def render() -> None:
     service = require_service()
-    render_header(
-        "Викладачі",
-        "Пошук, фільтри та профілі викладачів.",
-    )
+    render_header("Викладачі", "")
 
     departments = service.get_departments()
     department_labels = {"Усі кафедри": ""}
@@ -46,11 +43,11 @@ def render() -> None:
     departments_count = len({row.get("department_code") for row in teacher_rows if row.get("department_code")})
 
     with metrics[0]:
-        render_summary_strip("Викладачі у вибірці", str(teacher_count), "Кількість записів після застосування фільтрів.")
+        render_summary_strip("Викладачі у вибірці", str(teacher_count))
     with metrics[1]:
-        render_summary_strip("Публікації у вибірці", str(publication_count), "Сумарний публікаційний обсяг відфільтрованих викладачів.")
+        render_summary_strip("Публікації у вибірці", str(publication_count))
     with metrics[2]:
-        render_summary_strip("Кафедри у вибірці", str(departments_count), "Скільки кафедр представлено у поточному результаті.")
+        render_summary_strip("Кафедри у вибірці", str(departments_count))
 
     teacher_labels = {f"{row['full_name']} | {row['department_name']}": row["id"] for row in teacher_rows}
     layout = st.columns([1.18, 0.94], gap="large")
@@ -62,9 +59,8 @@ def render() -> None:
     with layout[1]:
         render_section_heading("Картка викладача")
         selected_teacher_label = st.selectbox(
-            "Обраний викладач",
+            "Обрати викладача",
             list(teacher_labels.keys()),
-            help="Список оновлюється відповідно до поточних фільтрів.",
         )
         selected_teacher_id = teacher_labels[selected_teacher_label]
 
@@ -96,6 +92,8 @@ def render() -> None:
                 ("ORCID", profile["orcid"]),
                 ("Google Scholar", profile["google_scholar"]),
                 ("Scopus", profile["scopus"]),
+                ("Web of Science", profile["web_of_science"]),
+                ("Профіль KSPU", profile["profile_url"]),
                 ("Кількість публікацій", str(len(publications))),
                 ("Кількість співавторів", str(len(coauthors))),
             ],
