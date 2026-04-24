@@ -4,4 +4,5 @@ pandas
 python-dotenv
 networkx
 pyvis
-
+scholarly
+rapidfuzz
