@@ -148,6 +148,62 @@ class Neo4jService:
                 {"rows": authorships},
             )
 
+    def import_teacher_publications(self, teacher_id: str, publications: list[dict[str, Any]]) -> int:
+        if not teacher_id or not publications:
+            return 0
+
+        normalized_publications: list[dict[str, Any]] = []
+        authorships: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+
+        for row in publications:
+            publication_id = str(row.get("id") or row.get("publication_id") or "").strip()
+            title = str(row.get("title") or "").strip()
+            if not publication_id or not title or publication_id in seen_ids:
+                continue
+
+            seen_ids.add(publication_id)
+            normalized_publications.append(
+                {
+                    "id": publication_id,
+                    "title": title,
+                    "year": row.get("year"),
+                    "doi": str(row.get("doi") or "").strip(),
+                    "pub_type": str(row.get("pub_type") or "").strip(),
+                    "source": str(row.get("source") or "").strip(),
+                    "url": str(row.get("external_url") or row.get("url") or "").strip(),
+                    "canonical_key": str(
+                        row.get("canonical_key")
+                        or row.get("openalex_id")
+                        or row.get("doi")
+                        or publication_id
+                    ).strip(),
+                    "external_ids": [
+                        value
+                        for value in [
+                            str(row.get("openalex_id") or "").strip(),
+                            str(row.get("doi") or "").strip(),
+                        ]
+                        if value
+                    ],
+                    "authors_snapshot": list(row.get("authors") or []),
+                    "confidence": float(row.get("confidence") or 0.82),
+                    "matched_by": str(row.get("matched_by") or "manual_preview").strip(),
+                }
+            )
+            authorships.append(
+                {
+                    "teacher_id": teacher_id,
+                    "publication_id": publication_id,
+                    "source": str(row.get("source") or "").strip(),
+                    "confidence": float(row.get("confidence") or 0.82),
+                    "matched_by": str(row.get("matched_by") or "manual_preview").strip(),
+                }
+            )
+
+        self.seed_publications(normalized_publications, authorships)
+        return len(normalized_publications)
+
     def get_overview_counts(self) -> dict[str, int]:
         rows = self.run_query(
             """
