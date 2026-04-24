@@ -16,10 +16,7 @@ from utils.analytics import build_diploma_summary, calculate_centrality_rows
 
 def render() -> None:
     service = require_service()
-    render_header(
-        "Аналітика",
-        "Публікаційна активність, співавторство та мережеві показники.",
-    )
+    render_header("Аналітика", "")
 
     top_limit = st.slider("Кількість записів у топах", min_value=5, max_value=20, value=10, step=1)
 
@@ -32,26 +29,21 @@ def render() -> None:
         render_summary_strip(
             "Лідер публікацій",
             top_teachers[0]["teacher"] if top_teachers else "—",
-            "Викладач з найбільшою кількістю публікацій у поточній вибірці.",
         )
     with highlights[1]:
         render_summary_strip(
             "Найсильніша пара",
             f"{top_pairs[0]['teacher_a']} / {top_pairs[0]['teacher_b']}" if top_pairs else "—",
-            "Пара викладачів з найінтенсивнішим співавторством.",
         )
     with highlights[2]:
         render_summary_strip(
             "Центральний вузол",
             centrality_rows[0]["teacher"] if centrality_rows else "—",
-            "Найбільш зв'язаний викладач у мережі співавторства.",
         )
 
-    render_section_heading(
-        "Інтерпретація результатів",
-    )
+    render_section_heading("Пояснення для диплома")
     render_info_card(
-        "Пояснення результатів для дипломної роботи",
+        "Короткий висновок",
         build_diploma_summary(top_teachers, top_pairs, centrality_rows),
     )
 
