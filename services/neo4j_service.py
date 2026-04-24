@@ -112,6 +112,7 @@ class Neo4jService:
             self.execute(statement)
         for statement in SCHEMA_STATEMENTS:
             self.execute(statement)
+        self.normalize_teacher_names_in_database()
 
     def seed_reference_data(self, faculties: list[dict[str, str]], departments: list[dict[str, str]]) -> None:
         self.prepare_database()
