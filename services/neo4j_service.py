@@ -205,6 +205,56 @@ class Neo4jService:
         self.seed_publications(normalized_publications, authorships)
         return len(normalized_publications)
 
+    def get_publication_management_details(self, publication_id: str) -> dict[str, Any] | None:
+        rows = self.run_query(
+            """
+            MATCH (p:Publication)
+            WHERE coalesce(p.id, p.publication_id) = $publication_id
+            OPTIONAL MATCH (t:Teacher)-[:AUTHORED]->(p)
+            RETURN
+                coalesce(p.id, p.publication_id) AS id,
+                p.title AS title,
+                p.year AS year,
+                coalesce(p.source, "") AS source,
+                count(DISTINCT t) AS linked_teachers_count,
+                collect(DISTINCT coalesce(t.full_name, t.name)) AS linked_teachers
+            LIMIT 1
+            """,
+            {"publication_id": publication_id},
+        )
+        return rows[0] if rows else None
+
+    def delete_teacher_publication_link(self, teacher_id: str, publication_id: str) -> bool:
+        rows = self.run_query(
+            """
+            MATCH (t:Teacher)-[r:AUTHORED]->(p:Publication)
+            WHERE coalesce(t.id, t.teacher_id) = $teacher_id
+              AND coalesce(p.id, p.publication_id) = $publication_id
+            DELETE r
+            WITH p
+            OPTIONAL MATCH (:Teacher)-[:AUTHORED]->(p)
+            WITH p, count(*) AS remaining_links
+            FOREACH (_ IN CASE WHEN remaining_links = 0 THEN [1] ELSE [] END | DETACH DELETE p)
+            RETURN true AS deleted
+            LIMIT 1
+            """,
+            {"teacher_id": teacher_id, "publication_id": publication_id},
+        )
+        return bool(rows)
+
+    def delete_publication(self, publication_id: str) -> bool:
+        rows = self.run_query(
+            """
+            MATCH (p:Publication)
+            WHERE coalesce(p.id, p.publication_id) = $publication_id
+            DETACH DELETE p
+            RETURN true AS deleted
+            LIMIT 1
+            """,
+            {"publication_id": publication_id},
+        )
+        return bool(rows)
+
     def upsert_system_state(self, key: str, values: dict[str, Any]) -> None:
         self.execute(
             """
