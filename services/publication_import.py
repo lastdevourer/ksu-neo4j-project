@@ -43,6 +43,29 @@ SCHOLAR_PROFILE_RE = re.compile(
     re.DOTALL,
 )
 
+TRANSLIT_VARIANTS = {
+    "Ð°": "a", "Ð±": "b", "Ð²": "v", "Ð³": "h", "Ò‘": "g",
+    "Ð´": "d", "Ðµ": "e", "Ñ”": "ie", "Ð¶": "zh", "Ð·": "z",
+    "Ð¸": "y", "Ñ–": "i", "Ñ—": "i", "Ð¹": "i", "Ðº": "k",
+    "Ð»": "l", "Ð¼": "m", "Ð½": "n", "Ð¾": "o", "Ð¿": "p",
+    "Ñ€": "r", "Ñ": "s", "Ñ‚": "t", "Ñƒ": "u", "Ñ„": "f",
+    "Ñ…": "kh", "Ñ†": "ts", "Ñ‡": "ch", "Ñˆ": "sh", "Ñ‰": "shch",
+    "ÑŽ": "iu", "Ñ": "ia", "ÑŒ": "", "ÑŠ": "", "Ñ‘": "e",
+}
+
+SPECIAL_NAME_VARIANTS = {
+    "Ð¾Ð»ÐµÐºÑÐ°Ð½Ð´Ñ€": {"oleksandr", "alexander", "alexandr"},
+    "Ð°Ð»ÐµÐºÑÐ°Ð½Ð´Ñ€": {"oleksandr", "alexander", "alexandr"},
+    "ÑÐµÑ€Ð³Ñ–Ð¹": {"serhii", "sergii", "sergey", "sergei"},
+    "ÑÐµÑ€Ð³ÐµÐ¹": {"serhii", "sergii", "sergey", "sergei"},
+    "Ð²Ñ–Ñ‚Ð°Ð»Ñ–Ð¹": {"vitalii", "vitaliy", "vitaly"},
+    "Ð²Ð¸Ñ‚Ð°Ð»Ð¸Ð¹": {"vitalii", "vitaliy", "vitaly"},
+    "Ñ‚ÐµÑ‚ÑÐ½Ð°": {"tetiana", "tetyana", "tatiana"},
+    "Ñ‚Ð°Ñ‚ÑŒÑÐ½Ð°": {"tetiana", "tetyana", "tatiana"},
+    "ÑŽÑ€Ñ–Ð¹": {"yurii", "yuriy", "yuri"},
+    "ÑŽÑ€Ð¸Ð¹": {"yurii", "yuriy", "yuri"},
+}
+
 
 @dataclass(frozen=True)
 class TeacherIdentity:
@@ -95,6 +118,19 @@ def normalize_title(value: str) -> str:
     return normalize_text(value).replace(" ", "")
 
 
+def transliterate_text(value: str) -> str:
+    normalized = normalize_text(value)
+    if not normalized:
+        return ""
+    result = []
+    for char in normalized:
+        if char in TRANSLIT_VARIANTS:
+            result.append(TRANSLIT_VARIANTS[char])
+        else:
+            result.append(char)
+    return "".join(result)
+
+
 def strip_orcid(value: str) -> str:
     text = (value or "").strip().rstrip("/")
     if not text:
@@ -130,16 +166,33 @@ def parse_html_text(value: str) -> str:
     return SPACE_RE.sub(" ", html.unescape(re.sub(r"<.*?>", "", value or ""))).strip()
 
 
+def split_person_tokens(value: str) -> list[str]:
+    return [token for token in normalize_text(value).split(" ") if token]
+
+
+def token_variants(token: str) -> set[str]:
+    if not token:
+        return set()
+    variants = {normalize_text(token), transliterate_text(token)}
+    variants.update(SPECIAL_NAME_VARIANTS.get(normalize_text(token), set()))
+    return {variant for variant in variants if variant}
+
+
 def build_name_variants(full_name: str) -> set[str]:
-    tokens = [token for token in full_name.split() if token]
+    tokens = split_person_tokens(full_name)
     if not tokens:
         return set()
-    variants = {normalize_text(full_name)}
+    variants = {
+        normalize_text(full_name),
+        transliterate_text(full_name),
+    }
     if len(tokens) >= 2:
         surname = tokens[0]
         given = tokens[1]
         variants.add(normalize_text(f"{given} {surname}"))
         variants.add(normalize_text(f"{surname} {given}"))
+        variants.add(transliterate_text(f"{given} {surname}"))
+        variants.add(transliterate_text(f"{surname} {given}"))
     if len(tokens) >= 3:
         surname = tokens[0]
         given = tokens[1]
@@ -147,14 +200,22 @@ def build_name_variants(full_name: str) -> set[str]:
         variants.add(normalize_text(f"{given} {surname} {patronymic}"))
         variants.add(normalize_text(f"{given} {patronymic} {surname}"))
         variants.add(normalize_text(f"{surname} {given} {patronymic}"))
+        variants.add(transliterate_text(f"{given} {surname} {patronymic}"))
+        variants.add(transliterate_text(f"{given} {patronymic} {surname}"))
+        variants.add(transliterate_text(f"{surname} {given} {patronymic}"))
     return {value for value in variants if value}
 
 
 def best_name_similarity(left: str, right_variants: set[str]) -> float:
-    normalized_left = normalize_text(left)
-    if not normalized_left or not right_variants:
+    normalized_candidates = {normalize_text(left), transliterate_text(left)}
+    normalized_candidates = {value for value in normalized_candidates if value}
+    if not normalized_candidates or not right_variants:
         return 0.0
-    return max(SequenceMatcher(None, normalized_left, variant).ratio() for variant in right_variants)
+    best_score = 0.0
+    for candidate in normalized_candidates:
+        for variant in right_variants:
+            best_score = max(best_score, SequenceMatcher(None, candidate, variant).ratio())
+    return best_score
 
 
 def extract_doi(value: str) -> str:
@@ -182,17 +243,52 @@ def canonical_publication_id(candidate: PublicationCandidate) -> tuple[str, str]
     return f"P-HASH-{digest}", fingerprint
 
 
+def publication_aliases(candidate: PublicationCandidate, publication_id: str, canonical_key: str) -> set[str]:
+    aliases = {f"id:{publication_id}", f"canon:{canonical_key}"}
+    normalized_title = normalize_title(candidate.title)
+    if normalized_title:
+        aliases.add(f"title:{normalized_title}")
+        aliases.add(f"titleyear:{normalized_title}|{candidate.year or 'nd'}")
+    doi = extract_doi(candidate.doi or candidate.url or "")
+    if doi:
+        aliases.add(f"doi:{doi}")
+    if candidate.external_id:
+        aliases.add(f"ext:{candidate.provider}:{normalize_text(candidate.external_id)}")
+    return aliases
+
+
 def candidate_author_matches(candidate: PublicationCandidate, teacher: TeacherIdentity) -> bool:
     if not candidate.authors:
         return True
 
+    teacher_tokens = split_person_tokens(teacher.full_name)
     variants = build_name_variants(teacher.full_name)
-    surname = normalize_text(teacher.full_name.split()[0]) if teacher.full_name.split() else ""
+    surname_variants = token_variants(teacher_tokens[0]) if teacher_tokens else set()
+    given_variants = token_variants(teacher_tokens[1]) if len(teacher_tokens) > 1 else set()
+
     for author in candidate.authors:
         author_normalized = normalize_text(author)
-        if not author_normalized:
+        author_translit = transliterate_text(author)
+        author_tokens = set(split_person_tokens(author))
+        author_tokens.update(token for token in author_translit.split(" ") if token)
+        if not author_normalized and not author_translit:
             continue
-        if surname and surname in author_normalized and best_name_similarity(author, variants) >= 0.48:
+
+        surname_ok = bool(surname_variants) and any(
+            variant in author_tokens or variant in author_normalized or variant in author_translit
+            for variant in surname_variants
+        )
+        given_ok = True
+        if given_variants:
+            given_ok = any(
+                variant in author_tokens
+                or variant in author_normalized
+                or variant in author_translit
+                or any(token.startswith(variant[:1]) for token in author_tokens if variant)
+                for variant in given_variants
+            )
+
+        if surname_ok and given_ok:
             return True
         if best_name_similarity(author, variants) >= 0.72:
             return True
@@ -784,6 +880,7 @@ class PublicationImportService:
         provider_hits: dict[str, int] = {}
         warnings: list[str] = []
         publication_map: dict[str, dict[str, Any]] = {}
+        publication_lookup: dict[str, str] = {}
         authorship_map: dict[tuple[str, str], dict[str, Any]] = {}
 
         for row in teacher_rows:
@@ -811,7 +908,12 @@ class PublicationImportService:
                         continue
 
                     publication_id, canonical_key = canonical_publication_id(candidate)
-                    existing = publication_map.get(publication_id)
+                    alias_keys = publication_aliases(candidate, publication_id, canonical_key)
+                    resolved_publication_id = next(
+                        (publication_lookup[alias] for alias in alias_keys if alias in publication_lookup),
+                        publication_id,
+                    )
+                    existing = publication_map.get(resolved_publication_id)
                     source_names = set(existing.get("source_names", [])) if existing else set()
                     source_names.add(candidate.provider)
 
@@ -821,7 +923,7 @@ class PublicationImportService:
                             merged_authors.append(author)
 
                     base_row = {
-                        "id": publication_id,
+                        "id": resolved_publication_id,
                         "title": candidate.title,
                         "year": candidate.year,
                         "doi": extract_doi(candidate.doi or ""),
@@ -869,14 +971,18 @@ class PublicationImportService:
                         existing["source_names"] = list(updated_sources)
                         existing["source"] = "; ".join(sorted(updated_sources))
                     else:
-                        publication_map[publication_id] = base_row
+                        publication_map[resolved_publication_id] = base_row
 
-                    authorship_key = (teacher.id, publication_id)
+                    resolved_aliases = publication_aliases(candidate, resolved_publication_id, canonical_key)
+                    for alias in resolved_aliases:
+                        publication_lookup[alias] = resolved_publication_id
+
+                    authorship_key = (teacher.id, resolved_publication_id)
                     current_authorship = authorship_map.get(authorship_key)
                     if current_authorship is None or candidate.source_priority < current_authorship["source_priority"]:
                         authorship_map[authorship_key] = {
                             "teacher_id": teacher.id,
-                            "publication_id": publication_id,
+                            "publication_id": resolved_publication_id,
                             "source": candidate.provider,
                             "confidence": round(candidate.confidence, 4),
                             "matched_by": candidate.matched_by,
