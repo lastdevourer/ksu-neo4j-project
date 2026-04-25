@@ -294,6 +294,41 @@ class Neo4jService:
             }
         return rows[0]
 
+    def get_profile_coverage(self) -> dict[str, int]:
+        rows = self.run_query(
+            """
+            MATCH (t:Teacher)
+            RETURN
+                count(DISTINCT t) AS teachers,
+                count(DISTINCT CASE WHEN coalesce(t.orcid, "") <> "" THEN t END) AS with_orcid,
+                count(DISTINCT CASE WHEN coalesce(t.google_scholar, "") <> "" THEN t END) AS with_scholar,
+                count(DISTINCT CASE WHEN coalesce(t.scopus, "") <> "" THEN t END) AS with_scopus,
+                count(DISTINCT CASE WHEN coalesce(t.web_of_science, "") <> "" THEN t END) AS with_wos,
+                count(DISTINCT CASE WHEN coalesce(t.orcid, "") <> "" OR coalesce(t.google_scholar, "") <> "" OR coalesce(t.scopus, "") <> "" OR coalesce(t.web_of_science, "") <> "" THEN t END) AS with_any_profile
+            """
+        )
+        return rows[0] if rows else {
+            "teachers": 0,
+            "with_orcid": 0,
+            "with_scholar": 0,
+            "with_scopus": 0,
+            "with_wos": 0,
+            "with_any_profile": 0,
+        }
+
+    def get_publication_source_summary(self) -> list[dict[str, Any]]:
+        return self.run_query(
+            """
+            MATCH (p:Publication)
+            WITH p, [source IN split(coalesce(p.source, ""), ";") | trim(source)] AS sources
+            UNWIND CASE WHEN size(sources) = 0 THEN ["ÐÐµÐ²Ñ–Ð´Ð¾Ð¼Ð¾"] ELSE sources END AS source_name
+            RETURN
+                source_name AS source,
+                count(DISTINCT p) AS publications
+            ORDER BY publications DESC, source
+            """
+        )
+
     def get_departments(self) -> list[dict[str, Any]]:
         return self.run_query(
             """
