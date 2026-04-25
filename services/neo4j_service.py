@@ -10,6 +10,7 @@ SCHEMA_STATEMENTS = [
     "CREATE CONSTRAINT department_code_unique IF NOT EXISTS FOR (d:Department) REQUIRE d.code IS UNIQUE",
     "CREATE CONSTRAINT teacher_id_unique IF NOT EXISTS FOR (t:Teacher) REQUIRE t.id IS UNIQUE",
     "CREATE CONSTRAINT publication_id_unique IF NOT EXISTS FOR (p:Publication) REQUIRE p.id IS UNIQUE",
+    "CREATE CONSTRAINT system_state_key_unique IF NOT EXISTS FOR (s:SystemState) REQUIRE s.key IS UNIQUE",
     "CREATE RANGE INDEX faculty_name_idx IF NOT EXISTS FOR (f:Faculty) ON (f.name)",
     "CREATE RANGE INDEX department_name_idx IF NOT EXISTS FOR (d:Department) ON (d.name)",
     "CREATE RANGE INDEX teacher_full_name_idx IF NOT EXISTS FOR (t:Teacher) ON (t.full_name)",
@@ -204,6 +205,53 @@ class Neo4jService:
         self.seed_publications(normalized_publications, authorships)
         return len(normalized_publications)
 
+    def upsert_system_state(self, key: str, values: dict[str, Any]) -> None:
+        self.execute(
+            """
+            MERGE (s:SystemState {key: $key})
+            SET s += $values
+            """,
+            {"key": key, "values": values},
+        )
+
+    def get_system_state(self, key: str) -> dict[str, Any] | None:
+        rows = self.run_query(
+            """
+            MATCH (s:SystemState {key: $key})
+            RETURN properties(s) AS state
+            LIMIT 1
+            """,
+            {"key": key},
+        )
+        return rows[0]["state"] if rows else None
+
+    def mark_teachers_publication_sync(
+        self,
+        teacher_ids: list[str],
+        *,
+        synced_at: str,
+        trigger: str,
+        status: str,
+    ) -> None:
+        if not teacher_ids:
+            return
+        self.execute(
+            """
+            UNWIND $teacher_ids AS teacher_id
+            MATCH (t:Teacher {id: teacher_id})
+            SET
+                t.last_publication_sync_at = $synced_at,
+                t.last_publication_sync_trigger = $trigger,
+                t.last_publication_sync_status = $status
+            """,
+            {
+                "teacher_ids": teacher_ids,
+                "synced_at": synced_at,
+                "trigger": trigger,
+                "status": status,
+            },
+        )
+
     def get_overview_counts(self) -> dict[str, int]:
         rows = self.run_query(
             """
@@ -325,7 +373,7 @@ class Neo4jService:
             {"search": search.strip(), "department_code": department_code.strip()},
         )
 
-    def get_teachers_for_publication_import(self, limit: int = 25) -> list[dict[str, Any]]:
+    def get_teachers_for_publication_import(self, limit: int = 25, stale_before: str = "") -> list[dict[str, Any]]:
         return self.run_query(
             """
             MATCH (t:Teacher)
@@ -341,6 +389,11 @@ class Neo4jService:
                 CASE WHEN coalesce(t.google_scholar, "") <> "" THEN 1 ELSE 0 END +
                 CASE WHEN coalesce(t.scopus, "") <> "" THEN 1 ELSE 0 END +
                 CASE WHEN coalesce(t.web_of_science, "") <> "" THEN 1 ELSE 0 END AS profile_score
+            WHERE (
+                $stale_before = ""
+                OR coalesce(t.last_publication_sync_at, "") = ""
+                OR coalesce(t.last_publication_sync_at, "") < $stale_before
+            )
             RETURN
                 coalesce(t.id, t.teacher_id) AS id,
                 coalesce(t.full_name, t.name) AS full_name,
@@ -352,11 +405,12 @@ class Neo4jService:
                 coalesce(t.web_of_science, "") AS web_of_science,
                 coalesce(t.profile_url, "") AS profile_url,
                 publications,
+                coalesce(t.last_publication_sync_at, "") AS last_publication_sync_at,
                 profile_score
-            ORDER BY profile_score DESC, full_name
+            ORDER BY profile_score DESC, publications ASC, last_publication_sync_at ASC, full_name
             LIMIT $limit
             """,
-            {"limit": int(limit)},
+            {"limit": int(limit), "stale_before": stale_before.strip()},
         )
 
     def get_teacher_import_options(self, department_code: str = "", limit: int = 200) -> list[dict[str, Any]]:
