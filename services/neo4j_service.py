@@ -321,7 +321,7 @@ class Neo4jService:
             """
             MATCH (p:Publication)
             WITH p, [source IN split(coalesce(p.source, ""), ";") | trim(source)] AS sources
-            UNWIND CASE WHEN size(sources) = 0 THEN ["ÐÐµÐ²Ñ–Ð´Ð¾Ð¼Ð¾"] ELSE sources END AS source_name
+            UNWIND CASE WHEN size(sources) = 0 THEN ["Невідомо"] ELSE sources END AS source_name
             RETURN
                 source_name AS source,
                 count(DISTINCT p) AS publications
@@ -502,6 +502,9 @@ class Neo4jService:
                 coalesce(t.scopus, "") AS scopus,
                 coalesce(t.web_of_science, "") AS web_of_science,
                 coalesce(t.profile_url, "") AS profile_url,
+                coalesce(t.last_publication_sync_at, "") AS last_publication_sync_at,
+                coalesce(t.last_publication_sync_trigger, "") AS last_publication_sync_trigger,
+                coalesce(t.last_publication_sync_status, "") AS last_publication_sync_status,
                 coalesce(d.code, d.department_id, t.department_code, t.department_id) AS department_code,
                 coalesce(d.name, t.department_name, "") AS department_name,
                 coalesce(f.code, f.faculty_id, t.faculty_code, t.faculty_id) AS faculty_code,
@@ -519,6 +522,10 @@ class Neo4jService:
             WHERE coalesce(t.id, t.teacher_id) = $teacher_id
             OPTIONAL MATCH (co:Teacher)-[:AUTHORED]->(p)
             WITH p, collect(DISTINCT coalesce(co.full_name, co.name)) AS linked_authors
+            WITH
+                p,
+                linked_authors,
+                [source IN split(coalesce(p.source, ""), ";") | trim(source)] AS source_names
             RETURN
                 coalesce(p.id, p.publication_id) AS id,
                 p.title AS title,
@@ -526,6 +533,13 @@ class Neo4jService:
                 coalesce(p.doi, "") AS doi,
                 coalesce(p.pub_type, "") AS pub_type,
                 coalesce(p.source, "") AS source,
+                coalesce(p.confidence, 0.0) AS confidence,
+                CASE
+                    WHEN any(source_name IN source_names WHERE source_name IN ["Scopus", "Web of Science"]) THEN "Офіційно підтверджено"
+                    WHEN coalesce(p.confidence, 0.0) >= 0.9 THEN "Підтверджено"
+                    WHEN coalesce(p.confidence, 0.0) >= 0.72 THEN "Кандидат"
+                    ELSE "Потребує перевірки"
+                END AS status,
                 CASE
                     WHEN size(linked_authors) > 0 THEN linked_authors
                     ELSE coalesce(p.authors_snapshot, [])
@@ -569,6 +583,10 @@ class Neo4jService:
             WHERE ($year IS NULL OR p.year = $year)
             OPTIONAL MATCH (t:Teacher)-[:AUTHORED]->(p)
             WITH p, collect(DISTINCT coalesce(t.full_name, t.name)) AS linked_authors
+            WITH
+                p,
+                linked_authors,
+                [source IN split(coalesce(p.source, ""), ";") | trim(source)] AS source_names
             RETURN
                 coalesce(p.id, p.publication_id) AS id,
                 p.title AS title,
@@ -576,6 +594,13 @@ class Neo4jService:
                 coalesce(p.doi, "") AS doi,
                 coalesce(p.pub_type, "") AS pub_type,
                 coalesce(p.source, "") AS source,
+                coalesce(p.confidence, 0.0) AS confidence,
+                CASE
+                    WHEN any(source_name IN source_names WHERE source_name IN ["Scopus", "Web of Science"]) THEN "Офіційно підтверджено"
+                    WHEN coalesce(p.confidence, 0.0) >= 0.9 THEN "Підтверджено"
+                    WHEN coalesce(p.confidence, 0.0) >= 0.72 THEN "Кандидат"
+                    ELSE "Потребує перевірки"
+                END AS status,
                 CASE
                     WHEN size(linked_authors) > 0 THEN linked_authors
                     ELSE coalesce(p.authors_snapshot, [])
