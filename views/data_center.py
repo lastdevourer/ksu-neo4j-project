@@ -15,7 +15,13 @@ from ui.formatters import publications_dataframe
 
 
 FLASH_KEY = "data_center_flash"
-PROBLEM_STATUSES = ["Кандидат", "Потребує перевірки"]
+PROBLEM_STATUSES = ["Кандидат", "Потребує перевірки", "Відхилено", "В чорному списку"]
+REVIEW_OPTIONS = [
+    "Підтверджено",
+    "Офіційно підтверджено",
+    "Відхилено",
+    "В чорному списку",
+]
 
 
 def _show_flash_message() -> None:
@@ -46,6 +52,44 @@ def _problem_publication_option(row: dict[str, object]) -> str:
     year_label = str(year) if year is not None else "н/д"
     status = str(row.get("status") or "")
     return f"{row.get('title', 'Без назви')} ({year_label}) | {status}"
+
+
+def _render_review_actions(service, publication_id: str, review_note: str) -> None:
+    status_columns = st.columns(2, gap="medium")
+    if status_columns[0].button(
+        "Підтвердити",
+        key=f"review_confirm_{publication_id}",
+        use_container_width=True,
+    ):
+        if service.set_publication_review_status(publication_id, "Підтверджено", review_note=review_note):
+            st.session_state[FLASH_KEY] = "Статус публікації оновлено на 'Підтверджено'."
+            st.rerun()
+    if status_columns[1].button(
+        "Офіційно підтвердити",
+        key=f"review_official_{publication_id}",
+        use_container_width=True,
+    ):
+        if service.set_publication_review_status(publication_id, "Офіційно підтверджено", review_note=review_note):
+            st.session_state[FLASH_KEY] = "Статус публікації оновлено на 'Офіційно підтверджено'."
+            st.rerun()
+
+    moderation_columns = st.columns(2, gap="medium")
+    if moderation_columns[0].button(
+        "Відхилити",
+        key=f"review_reject_{publication_id}",
+        use_container_width=True,
+    ):
+        if service.set_publication_review_status(publication_id, "Відхилено", review_note=review_note):
+            st.session_state[FLASH_KEY] = "Публікацію відхилено."
+            st.rerun()
+    if moderation_columns[1].button(
+        "В чорний список",
+        key=f"review_blacklist_{publication_id}",
+        use_container_width=True,
+    ):
+        if service.set_publication_review_status(publication_id, "В чорному списку", review_note=review_note):
+            st.session_state[FLASH_KEY] = "Публікацію додано до чорного списку."
+            st.rerun()
 
 
 def render() -> None:
@@ -82,7 +126,7 @@ def render() -> None:
     ).strip().lower()
     status_filter = publication_filters[1].selectbox(
         "Показати статус",
-        ["Усі проблемні", "Кандидат", "Потребує перевірки"],
+        ["Усі проблемні", "Кандидат", "Потребує перевірки", "Відхилено", "В чорному списку"],
     )
 
     filtered_problematic = problematic_publications
@@ -136,6 +180,95 @@ def render() -> None:
                     ),
                 ],
             )
+
+            review_note = st.text_area(
+                "Нотатка модератора",
+                value=str(details.get("review_note") or ""),
+                height=100,
+                key=f"data_center_review_note_{publication_id}",
+            )
+            _render_review_actions(service, publication_id, review_note)
+
+            with st.expander("Редагування запису", expanded=False):
+                edited_title = st.text_input(
+                    "Назва",
+                    value=str(details.get("title") or selected_publication.get("title") or ""),
+                    key=f"data_center_title_{publication_id}",
+                )
+                edit_columns = st.columns(2, gap="medium")
+                edited_year_raw = edit_columns[0].text_input(
+                    "Рік",
+                    value="" if details.get("year") is None else str(details.get("year")),
+                    key=f"data_center_year_{publication_id}",
+                )
+                edited_confidence = edit_columns[1].slider(
+                    "Рівень довіри",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=float(details.get("confidence") or selected_publication.get("confidence") or 0.0),
+                    step=0.01,
+                    key=f"data_center_confidence_{publication_id}",
+                )
+                edited_doi = st.text_input(
+                    "DOI",
+                    value=str(details.get("doi") or selected_publication.get("doi") or ""),
+                    key=f"data_center_doi_{publication_id}",
+                )
+                edited_pub_type = st.text_input(
+                    "Тип",
+                    value=str(details.get("pub_type") or selected_publication.get("pub_type") or ""),
+                    key=f"data_center_type_{publication_id}",
+                )
+                edited_source = st.text_input(
+                    "Джерело",
+                    value=str(details.get("source") or selected_publication.get("source") or ""),
+                    key=f"data_center_source_{publication_id}",
+                )
+                edited_status = st.selectbox(
+                    "Ручний статус",
+                    ["Автостатус"] + REVIEW_OPTIONS,
+                    index=(
+                        ["Автостатус"] + REVIEW_OPTIONS
+                    ).index(str(details.get("review_status") or "Автостатус"))
+                    if str(details.get("review_status") or "Автостатус") in (["Автостатус"] + REVIEW_OPTIONS)
+                    else 0,
+                    key=f"data_center_status_{publication_id}",
+                )
+
+                if st.button(
+                    "Зберегти зміни",
+                    key=f"data_center_save_{publication_id}",
+                    use_container_width=True,
+                ):
+                    edited_year = int(edited_year_raw) if edited_year_raw.strip().isdigit() else None
+                    saved = service.update_publication_metadata(
+                        publication_id,
+                        title=edited_title,
+                        year=edited_year,
+                        doi=edited_doi,
+                        pub_type=edited_pub_type,
+                        source=edited_source,
+                        confidence=edited_confidence,
+                        review_note=review_note,
+                    )
+                    if edited_status == "Автостатус":
+                        service.clear_publication_review_status(publication_id)
+                    else:
+                        service.set_publication_review_status(publication_id, edited_status, review_note=review_note)
+
+                    if saved:
+                        st.session_state[FLASH_KEY] = "Публікацію оновлено."
+                        st.rerun()
+                    st.error("Не вдалося зберегти зміни.")
+
+                if st.button(
+                    "Скинути ручний статус",
+                    key=f"data_center_reset_status_{publication_id}",
+                    use_container_width=True,
+                ):
+                    if service.clear_publication_review_status(publication_id):
+                        st.session_state[FLASH_KEY] = "Ручний статус скинуто, знову діє автооцінка."
+                        st.rerun()
 
             delete_confirm = st.checkbox(
                 "Підтверджую повне видалення вибраної публікації",
