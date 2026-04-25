@@ -88,11 +88,18 @@ def render_sidebar(service: Neo4jService) -> None:
                     st.error(f"ÐÐµ Ð²Ð´Ð°Ð»Ð¾ÑÑ Ð·Ð°Ð²Ð°Ð½Ñ‚Ð°Ð¶Ð¸Ñ‚Ð¸ Ð¿ÑƒÐ±Ð»Ñ–ÐºÐ°Ñ†Ñ–Ñ—: {exc}")
 
             available_sources = ["ORCID", "OpenAlex", "Crossref"]
+            missing_sources: list[str] = []
             if import_config := get_publication_import_config():
                 if import_config.scopus_api_key:
                     available_sources.append("Scopus")
+                else:
+                    missing_sources.append("Scopus API")
                 if import_config.wos_api_key:
                     available_sources.append("Web of Science")
+                else:
+                    missing_sources.append("Web of Science API")
             if use_scholar:
                 available_sources.append("Scholar")
             st.caption(f"ÐÐºÑ‚Ð¸Ð²Ð½Ñ– Ð´Ð¶ÐµÑ€ÐµÐ»Ð° Ñ–Ð¼Ð¿Ð¾Ñ€Ñ‚Ñƒ: {', '.join(available_sources)}")
+            if missing_sources:
+                st.caption(f"Ð”Ð»Ñ Ð¼Ð°ÐºÑÐ¸Ð¼Ð°Ð»ÑŒÐ½Ð¾Ð³Ð¾ Ð¿Ð¾ÐºÑ€Ð¸Ñ‚Ñ‚Ñ Ñ‰Ðµ Ð¿Ð¾Ñ‚Ñ€Ñ–Ð±Ð½Ñ– ÐºÐ»ÑŽÑ‡Ñ–: {', '.join(missing_sources)}")
