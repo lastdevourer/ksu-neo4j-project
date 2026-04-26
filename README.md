@@ -1,51 +1,6 @@
-# Академічна мережа КСПУ / ХДУ
+# KSPU Academic Network
 
-Streamlit MVP для дипломної теми:
-`Програмний модуль обліку наукових публікацій викладачів на основі мережевого аналізу`.
-
-## Що вміє сервіс
-
-- показує структуру факультетів і кафедр у Neo4j
-- відображає викладачів, їхні публікації та співавторів
-- будує граф авторства між вузлами `Teacher` і `Publication`
-- розраховує топ авторів, топ пар співавторів, `degree centrality` і `betweenness centrality`
-
-## Модель даних
-
-```text
-(:Faculty)-[:HAS_DEPARTMENT]->(:Department)
-(:Department)-[:HAS_TEACHER]->(:Teacher)
-(:Teacher)-[:AUTHORED]->(:Publication)
-```
-
-## Streamlit Cloud + Neo4j Aura
-
-Базовий сценарій деплою:
-
-1. Завантажити репозиторій на GitHub.
-2. Підключити репозиторій у Streamlit Cloud.
-3. Вказати головний файл застосунку: `app.py`.
-4. Додати секрети в налаштуваннях застосунку Streamlit.
-
-Приклад секретів для Streamlit Cloud:
-
-```toml
-NEO4J_URI = "neo4j+s://your-aura-instance.databases.neo4j.io"
-NEO4J_USER = "neo4j"
-NEO4J_PASSWORD = "your-password"
-# NEO4J_DATABASE = "neo4j"
-```
-
-Локально ті самі параметри можна додати через `.env` або `st.secrets`:
-
-```env
-NEO4J_URI=neo4j+s://...
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=your-password
-# NEO4J_DATABASE=neo4j
-```
-
-`NEO4J_DATABASE` не є обов'язковим. Якщо Neo4j Aura повертає помилку маршрутизації або `ClientError` під час першого запиту, приберіть цей параметр із секретів або вкажіть точну назву домашньої бази.
+Streamlit-сервіс для обліку та аналізу наукових публікацій викладачів у Neo4j.
 
 ## Запуск
 
@@ -53,8 +8,44 @@ NEO4J_PASSWORD=your-password
 streamlit run app.py
 ```
 
-У лівій панелі доступні службові дії:
+## Secrets
 
-- перевірка підключення до Aura
-- створення constraints та indexes
-- заповнення довідника факультетів і кафедр
+```toml
+NEO4J_URI = "neo4j+s://..."
+NEO4J_USER = "neo4j"
+NEO4J_PASSWORD = "..."
+
+OPENALEX_API_KEY = "..."
+CROSSREF_MAILTO = "you@example.com"
+ORCID_CLIENT_ID = "..."
+ORCID_CLIENT_SECRET = "..."
+```
+
+`NEO4J_DATABASE` необов'язковий. Для Neo4j Aura його краще не вказувати, якщо домашня база вже визначається автоматично.
+
+## Структура проєкту
+
+- `app.py` — точка входу, маршрутизація сторінок і запуск UI.
+- `config.py` — читання secrets/env і конфігурація імпорту.
+- `views/` — сторінки Streamlit.
+- `ui/` — оформлення, компоненти, сайдбар, форматування таблиць.
+- `services/neo4j_service.py` — робота з Neo4j, CRUD, аналітика, модерація.
+- `services/publication_import.py` — unified import публікацій із зовнішніх джерел.
+- `services/publication_sources.py` — низькорівнева логіка пошуку джерел і матчинг.
+- `utils/` — мережевий аналіз і побудова графів.
+- `data/seed_data.py` — seed-структура факультетів і кафедр.
+- `data/loaders.py` — завантаження seed-даних.
+- `data/seed_teachers.csv` — seed викладачів.
+- `data/import_templates/` — шаблони CSV для ручного імпорту.
+- `docs/data_pipeline.md` — нотатки про pipeline імпорту.
+- `scripts/scrape_kspu_teachers.py` — допоміжний скрипт збору викладачів KSPU.
+
+## Основні сторінки
+
+- `Дашборд` — ключові метрики та структура.
+- `Структура` — факультети, кафедри, викладачі, сервісні дії.
+- `Викладачі` — картка викладача, публікації, співавтори.
+- `Публікації` — модерація та перегляд робіт.
+- `Центр даних` — аудит, проблемні записи, ручне додавання.
+- `Граф` — мережеві візуалізації.
+- `Аналітика` — рейтинги, centrality, звіти, експорт.
