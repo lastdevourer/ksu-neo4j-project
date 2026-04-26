@@ -7,8 +7,19 @@ from config import get_publication_import_config
 from data.loaders import load_teachers_seed
 from data.seed_data import DEPARTMENTS, FACULTIES
 from services.publication_import import PublicationImportService
-from ui.components import render_empty_state, render_header, render_section_heading, require_service
-from ui.formatters import department_overview_dataframe, faculty_overview_dataframe, publication_sources_dataframe, teachers_dataframe
+from ui.components import (
+    render_empty_state,
+    render_header,
+    render_section_heading,
+    render_summary_strip,
+    require_service,
+)
+from ui.formatters import (
+    department_overview_dataframe,
+    faculty_overview_dataframe,
+    publication_sources_dataframe,
+    teachers_dataframe,
+)
 
 
 FLASH_KEY = "structure_flash"
@@ -28,8 +39,35 @@ def _teacher_option(row: dict[str, object]) -> str:
     return f"{row.get('full_name', 'Без ПІБ')} | {row.get('department_name', 'Без кафедри')} | {row.get('id', '')}"
 
 
+def _teacher_has_any_profile(row: dict[str, object]) -> bool:
+    return any(
+        str(row.get(field) or "").strip()
+        for field in ("orcid", "google_scholar", "scopus", "web_of_science", "profile_url")
+    )
+
+
+def _filter_teachers(
+    rows: list[dict[str, object]],
+    *,
+    faculty_code: str,
+    profile_mode: str,
+) -> list[dict[str, object]]:
+    filtered = rows
+    if faculty_code:
+        filtered = [row for row in filtered if str(row.get("faculty_code") or "") == faculty_code]
+
+    if profile_mode == "З профілями":
+        filtered = [row for row in filtered if _teacher_has_any_profile(row)]
+    elif profile_mode == "Без профілів":
+        filtered = [row for row in filtered if not _teacher_has_any_profile(row)]
+    elif profile_mode == "Лише ORCID":
+        filtered = [row for row in filtered if str(row.get("orcid") or "").strip()]
+
+    return filtered
+
+
 def _render_faculty_department_tab(service) -> None:
-    render_section_heading("Довідник структури", "Офіційний контур університетської структури та ручне редагування довідників.")
+    render_section_heading("Довідник структури", "Офіційний контур університетської структури з пошуком, фільтрацією та ручним редагуванням.")
 
     with st.expander("Сервісні дії зі структурою", expanded=False):
         action_columns = st.columns(3, gap="medium")
@@ -51,31 +89,102 @@ def _render_faculty_department_tab(service) -> None:
 
     faculties = service.get_faculties()
     departments = service.get_departments()
-    faculty_frame = faculty_overview_dataframe(service.get_faculty_overview())
-    department_frame = department_overview_dataframe(service.get_department_overview())
+    raw_faculty_rows = service.get_faculty_overview()
+    raw_department_rows = service.get_department_overview()
+
+    filter_columns = st.columns([0.8, 1.2, 0.75], gap="medium")
+    faculty_search = filter_columns[0].text_input("Пошук факультету", placeholder="Назва або код").strip().lower()
+    faculty_options = {"Усі факультети": ""} | {
+        f"{row['name']} ({row['code']})": str(row["code"]) for row in faculties if row.get("code")
+    }
+    selected_faculty_code = filter_columns[1].selectbox(
+        "Фільтр кафедр за факультетом",
+        list(faculty_options.keys()),
+        key="structure_faculty_filter",
+    )
+    department_search = filter_columns[2].text_input("Пошук кафедри", placeholder="Назва або код").strip().lower()
+
+    filtered_faculty_rows = raw_faculty_rows
+    if faculty_search:
+        filtered_faculty_rows = [
+            row
+            for row in filtered_faculty_rows
+            if faculty_search in str(row.get("name") or "").lower()
+            or faculty_search in str(row.get("code") or "").lower()
+        ]
+
+    filtered_department_rows = raw_department_rows
+    faculty_filter_code = faculty_options[selected_faculty_code]
+    if faculty_filter_code:
+        filtered_department_rows = [
+            row for row in filtered_department_rows if str(row.get("faculty_code") or "") == faculty_filter_code
+        ]
+    if department_search:
+        filtered_department_rows = [
+            row
+            for row in filtered_department_rows
+            if department_search in str(row.get("name") or "").lower()
+            or department_search in str(row.get("code") or "").lower()
+        ]
+
+    faculty_frame = faculty_overview_dataframe(filtered_faculty_rows)
+    department_frame = department_overview_dataframe(filtered_department_rows)
+
+    summary = st.columns(3, gap="medium")
+    with summary[0]:
+        render_summary_strip("У фокусі", str(len(filtered_faculty_rows)), "факультетів у поточному зрізі")
+    with summary[1]:
+        render_summary_strip("Кафедри у фокусі", str(len(filtered_department_rows)), "після пошуку та фільтрів")
+    with summary[2]:
+        render_summary_strip("Повна структура", f"{len(raw_faculty_rows)} / {len(raw_department_rows)}", "факультети / кафедри в базі")
 
     tables = st.columns([0.92, 1.08], gap="large")
     with tables[0]:
-        render_section_heading("Факультети")
+        header_columns = st.columns([0.72, 0.28], gap="small")
+        with header_columns[0]:
+            render_section_heading("Факультети")
+        with header_columns[1]:
+            if not faculty_frame.empty:
+                st.download_button(
+                    "CSV",
+                    _csv_bytes(faculty_frame),
+                    file_name="faculties_filtered.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    key="download_filtered_faculties",
+                )
         if faculty_frame.empty:
-            render_empty_state("Факультети відсутні", "Скористайтеся оновленням структури, щоб заповнити довідник.")
+            render_empty_state("Факультети не знайдено", "Змініть пошук або оновіть довідник структури.")
         else:
             st.dataframe(faculty_frame, use_container_width=True, hide_index=True)
+
     with tables[1]:
-        render_section_heading("Кафедри")
+        header_columns = st.columns([0.72, 0.28], gap="small")
+        with header_columns[0]:
+            render_section_heading("Кафедри")
+        with header_columns[1]:
+            if not department_frame.empty:
+                st.download_button(
+                    "CSV",
+                    _csv_bytes(department_frame),
+                    file_name="departments_filtered.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    key="download_filtered_departments",
+                )
         if department_frame.empty:
-            render_empty_state("Кафедри відсутні", "Після оновлення структури тут з'являться підрозділи.")
+            render_empty_state("Кафедри не знайдено", "Спробуйте інший факультет або скоригуйте пошук.")
         else:
             st.dataframe(department_frame, use_container_width=True, hide_index=True)
 
     edit_columns = st.columns(2, gap="large")
-    faculty_map = {"Новий факультет": None} | {
+    faculty_edit_map = {"Новий факультет": None} | {
         f"{row['name']} ({row['code']})": row for row in faculties if row.get("code")
     }
     with edit_columns[0]:
         with st.expander("Додати або редагувати факультет", expanded=False):
-            selected_faculty_label = st.selectbox("Факультет", list(faculty_map.keys()), key="structure_faculty_select")
-            selected_faculty = faculty_map[selected_faculty_label]
+            selected_faculty_label = st.selectbox("Факультет", list(faculty_edit_map.keys()), key="structure_faculty_select")
+            selected_faculty = faculty_edit_map[selected_faculty_label]
             faculty_code_default = str(selected_faculty.get("code") or "") if selected_faculty else ""
             faculty_name_default = str(selected_faculty.get("name") or "") if selected_faculty else ""
 
@@ -112,43 +221,47 @@ def _render_faculty_department_tab(service) -> None:
                     else:
                         st.error("Не вдалося видалити факультет.")
 
-    faculty_options = {f"{row['name']} ({row['code']})": str(row["code"]) for row in faculties if row.get("code")}
-    department_map = {"Нова кафедра": None} | {
+    department_edit_map = {"Нова кафедра": None} | {
         f"{row['name']} ({row['code']})": row for row in departments if row.get("code")
     }
+    faculty_choice_map = {f"{row['name']} ({row['code']})": str(row["code"]) for row in faculties if row.get("code")}
     with edit_columns[1]:
         with st.expander("Додати або редагувати кафедру", expanded=False):
             selected_department_label = st.selectbox(
                 "Кафедра",
-                list(department_map.keys()),
+                list(department_edit_map.keys()),
                 key="structure_department_select",
             )
-            selected_department = department_map[selected_department_label]
+            selected_department = department_edit_map[selected_department_label]
             department_code_default = str(selected_department.get("code") or "") if selected_department else ""
             department_name_default = str(selected_department.get("name") or "") if selected_department else ""
             department_faculty_default = str(selected_department.get("faculty_code") or "") if selected_department else ""
             department_faculty_label_default = next(
-                (label for label, code in faculty_options.items() if code == department_faculty_default),
-                next(iter(faculty_options.keys()), None),
+                (label for label, code in faculty_choice_map.items() if code == department_faculty_default),
+                next(iter(faculty_choice_map.keys()), None),
             )
 
             department_code = st.text_input("Код кафедри", value=department_code_default, key="structure_department_code").strip()
             department_name = st.text_input("Назва кафедри", value=department_name_default, key="structure_department_name").strip()
-            selected_faculty_label_for_department = st.selectbox(
-                "Факультет для кафедри",
-                list(faculty_options.keys()),
-                index=(list(faculty_options.keys()).index(department_faculty_label_default) if department_faculty_label_default in faculty_options else 0) if faculty_options else 0,
-                key="structure_department_faculty",
-            ) if faculty_options else None
+            selected_faculty_label_for_department = (
+                st.selectbox(
+                    "Факультет для кафедри",
+                    list(faculty_choice_map.keys()),
+                    index=(list(faculty_choice_map.keys()).index(department_faculty_label_default) if department_faculty_label_default in faculty_choice_map else 0),
+                    key="structure_department_faculty",
+                )
+                if faculty_choice_map
+                else None
+            )
 
             department_actions = st.columns(2, gap="medium")
             if department_actions[0].button("Зберегти кафедру", use_container_width=True, key="structure_save_department"):
-                if not faculty_options:
+                if not faculty_choice_map:
                     st.warning("Спочатку створіть хоча б один факультет.")
                 elif not department_code or not department_name:
                     st.warning("Вкажіть код і назву кафедри.")
                 else:
-                    faculty_code = faculty_options[selected_faculty_label_for_department]
+                    faculty_code = faculty_choice_map[selected_faculty_label_for_department]
                     if service.upsert_department(code=department_code, faculty_code=faculty_code, name=department_name):
                         st.session_state[FLASH_KEY] = f"Кафедру '{department_name}' збережено."
                         st.rerun()
@@ -180,9 +293,11 @@ def _render_faculty_department_tab(service) -> None:
 
 
 def _render_teachers_tab(service) -> None:
-    render_section_heading("Керування викладачами", "Створюйте, редагуйте, масово видаляйте та завантажуйте викладачів.")
+    render_section_heading("Керування викладачами", "Створюйте, редагуйте, фільтруйте, масово очищуйте та швидко вивантажуйте склад викладачів.")
+
     all_teachers = service.get_teachers()
     departments = service.get_departments()
+    faculties = service.get_faculties()
 
     with st.expander("Сервісні дії з викладачами", expanded=False):
         action_columns = st.columns([1.0, 1.0, 1.1], gap="medium")
@@ -194,7 +309,7 @@ def _render_teachers_tab(service) -> None:
             st.rerun()
 
         action_columns[1].download_button(
-            "Експорт викладачів CSV",
+            "Експорт усіх викладачів CSV",
             _csv_bytes(teachers_dataframe(all_teachers) if all_teachers else pd.DataFrame(columns=["ID"])),
             file_name="teachers_export.csv",
             mime="text/csv",
@@ -205,7 +320,12 @@ def _render_teachers_tab(service) -> None:
             "Підтверджую повне очищення викладачів і публікацій",
             key="delete_teachers_confirm",
         )
-        if st.button("Очистити всіх викладачів і публікації", use_container_width=True, type="primary", key="structure_delete_all_teachers"):
+        if st.button(
+            "Очистити всіх викладачів і публікації",
+            use_container_width=True,
+            type="primary",
+            key="structure_delete_all_teachers",
+        ):
             if not delete_teachers_confirm:
                 st.warning("Підтвердіть очищення викладачів і публікацій перед виконанням дії.")
             else:
@@ -214,6 +334,52 @@ def _render_teachers_tab(service) -> None:
                     f"Очищено викладачів: {result['teachers']}, публікацій: {result['publications']}."
                 )
                 st.rerun()
+
+    teacher_filter_columns = st.columns([1.0, 1.0, 1.0, 0.85], gap="medium")
+    teacher_search = teacher_filter_columns[0].text_input("Пошук викладача", placeholder="ПІБ або ID").strip()
+    faculty_filter_options = {"Усі факультети": ""} | {
+        f"{row['name']} ({row['code']})": str(row["code"]) for row in faculties if row.get("code")
+    }
+    faculty_filter_label = teacher_filter_columns[1].selectbox(
+        "Факультет",
+        list(faculty_filter_options.keys()),
+        key="structure_teacher_faculty_filter",
+    )
+    department_filter_options = {"Усі кафедри": ""} | {
+        f"{row['name']} ({row['code']})": str(row["code"]) for row in departments if row.get("code")
+    }
+    department_filter_label = teacher_filter_columns[2].selectbox(
+        "Кафедра",
+        list(department_filter_options.keys()),
+        key="structure_teacher_department_filter",
+    )
+    profile_mode = teacher_filter_columns[3].selectbox(
+        "Профіль",
+        ["Усі", "З профілями", "Без профілів", "Лише ORCID"],
+        key="structure_teacher_profile_filter",
+    )
+
+    base_teachers = service.get_teachers(
+        search=teacher_search,
+        department_code=department_filter_options[department_filter_label],
+    )
+    filtered_teachers = _filter_teachers(
+        base_teachers,
+        faculty_code=faculty_filter_options[faculty_filter_label],
+        profile_mode=profile_mode,
+    )
+
+    teachers_with_profiles = sum(1 for row in filtered_teachers if _teacher_has_any_profile(row))
+    teachers_without_profiles = len(filtered_teachers) - teachers_with_profiles
+    total_publications = sum(int(row.get("publications") or 0) for row in filtered_teachers)
+
+    summary = st.columns(3, gap="medium")
+    with summary[0]:
+        render_summary_strip("Викладачі у фокусі", str(len(filtered_teachers)), "поточний відфільтрований список")
+    with summary[1]:
+        render_summary_strip("З профілями", str(teachers_with_profiles), "ORCID, Scholar, Scopus, WoS або профіль кафедри")
+    with summary[2]:
+        render_summary_strip("Публікації у зрізі", str(total_publications), "сума робіт у поточному списку")
 
     department_options = {f"{row['name']} ({row['code']})": str(row["code"]) for row in departments if row.get("code")}
     teacher_map = {"Новий викладач": None} | {
@@ -243,12 +409,16 @@ def _render_teachers_tab(service) -> None:
 
             teacher_id = st.text_input("ID викладача", value=teacher_id_default, key="structure_teacher_id").strip()
             full_name = st.text_input("ПІБ", value=full_name_default, key="structure_teacher_name").strip()
-            department_label = st.selectbox(
-                "Кафедра",
-                list(department_options.keys()),
-                index=(list(department_options.keys()).index(department_label_default) if department_label_default in department_options else 0) if department_options else 0,
-                key="structure_teacher_department",
-            ) if department_options else None
+            department_label = (
+                st.selectbox(
+                    "Кафедра",
+                    list(department_options.keys()),
+                    index=(list(department_options.keys()).index(department_label_default) if department_label_default in department_options else 0),
+                    key="structure_teacher_department",
+                )
+                if department_options
+                else None
+            )
             profile_columns = st.columns(2, gap="medium")
             position = profile_columns[0].text_input("Посада", value=position_default, key="structure_teacher_position").strip()
             academic_degree = profile_columns[1].text_input("Науковий ступінь", value=degree_default, key="structure_teacher_degree").strip()
@@ -312,7 +482,7 @@ def _render_teachers_tab(service) -> None:
 
     with edit_columns[1]:
         with st.expander("Масове видалення викладачів", expanded=False):
-            bulk_teacher_map = {_teacher_option(row): str(row["id"]) for row in all_teachers if row.get("id")}
+            bulk_teacher_map = {_teacher_option(row): str(row["id"]) for row in filtered_teachers if row.get("id")}
             selected_bulk_teachers = st.multiselect(
                 "Оберіть викладачів",
                 list(bulk_teacher_map.keys()),
@@ -322,7 +492,12 @@ def _render_teachers_tab(service) -> None:
                 "Підтверджую масове видалення вибраних викладачів",
                 key="structure_bulk_delete_teachers_confirm",
             )
-            if st.button("Видалити вибраних викладачів", use_container_width=True, key="structure_bulk_delete_teachers", type="primary"):
+            if st.button(
+                "Видалити вибраних викладачів",
+                use_container_width=True,
+                key="structure_bulk_delete_teachers",
+                type="primary",
+            ):
                 teacher_ids = [bulk_teacher_map[label] for label in selected_bulk_teachers if label in bulk_teacher_map]
                 if not teacher_ids:
                     st.warning("Не обрано жодного викладача.")
@@ -333,12 +508,24 @@ def _render_teachers_tab(service) -> None:
                     st.session_state[FLASH_KEY] = f"Масово видалено викладачів: {deleted}."
                     st.rerun()
 
-        teacher_frame = teachers_dataframe(all_teachers)
-        if teacher_frame.empty:
-            render_empty_state("Викладачів немає", "Завантажте seed-викладачів або створіть профіль вручну.")
-        else:
-            render_section_heading("Поточний склад викладачів")
-            st.dataframe(teacher_frame, use_container_width=True, hide_index=True)
+        if filtered_teachers:
+            filtered_frame = teachers_dataframe(filtered_teachers)
+            st.download_button(
+                "Експорт поточного зрізу CSV",
+                _csv_bytes(filtered_frame),
+                file_name="teachers_filtered.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key="download_filtered_teachers",
+            )
+        st.caption(f"Без профілів у поточному зрізі: {teachers_without_profiles}")
+
+    teacher_frame = teachers_dataframe(filtered_teachers)
+    if teacher_frame.empty:
+        render_empty_state("Викладачів не знайдено", "Спробуйте змінити фільтри, завантажте seed-викладачів або створіть профіль вручну.")
+    else:
+        render_section_heading("Поточний склад викладачів")
+        st.dataframe(teacher_frame, use_container_width=True, hide_index=True)
 
 
 def _render_publications_tab(service) -> None:
@@ -387,19 +574,37 @@ def _render_publications_tab(service) -> None:
                 st.rerun()
 
     publication_sources = publication_sources_dataframe(service.get_publication_source_summary())
+    counts = service.get_overview_counts()
+
+    summary = st.columns(3, gap="medium")
+    with summary[0]:
+        render_summary_strip("Публікації в базі", str(counts["publications"]), "збережені записи")
+    with summary[1]:
+        render_summary_strip("Зв'язки авторства", str(counts["authorship_links"]), "поточний контур авторів")
+    with summary[2]:
+        render_summary_strip("Джерела", str(len(publication_sources.index)), "активні типи джерел у базі")
+
     if publication_sources.empty:
         render_empty_state("Публікаційний контур порожній", "Запустіть імпорт або додайте публікації вручну, щоб побачити джерела.")
     else:
-        source_columns = st.columns([1.0, 1.0], gap="large")
+        source_columns = st.columns([0.95, 1.05], gap="large")
         with source_columns[0]:
             st.bar_chart(publication_sources.set_index("Джерело"), use_container_width=True, height=280)
         with source_columns[1]:
             st.dataframe(publication_sources, use_container_width=True, hide_index=True)
+            st.download_button(
+                "Експорт джерел CSV",
+                _csv_bytes(publication_sources),
+                file_name="publication_sources.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key="download_publication_sources",
+            )
 
 
 def render() -> None:
     service = require_service()
-    render_header("Структура", subtitle="Керуйте довідниками, викладачами, публікаціями та сервісними діями з одного місця.")
+    render_header("Структура", subtitle="Робочий простір для керування факультетами, кафедрами, викладачами та публікаційним контуром.")
     _show_flash_message()
 
     counts = service.get_overview_counts()
