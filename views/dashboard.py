@@ -49,7 +49,7 @@ def render() -> None:
         progress_columns[3].progress(profile_coverage["with_wos"] / total_teachers, text="Web of Science")
 
     if faculty_overview.empty and department_overview.empty:
-        render_empty_state("Дані відсутні", "Завантажте викладачів KSPU у бічній панелі.")
+        render_empty_state("Дані відсутні", "Завантажте викладачів KSPU або відкрийте сторінку `Структура` для керування базою.")
         return
 
     overview_columns = st.columns([0.88, 1.12], gap="large")
@@ -57,14 +57,14 @@ def render() -> None:
     with overview_columns[0]:
         render_section_heading("Факультети")
         if faculty_overview.empty:
-            render_empty_state("Немає даних", "Факультетний зріз з'явиться після імпорту.")
+            render_empty_state("Немає даних", "Факультетний зріз з'явиться після імпорту структури.")
         else:
             st.dataframe(faculty_overview, use_container_width=True, hide_index=True)
 
     with overview_columns[1]:
         render_section_heading("Кафедри")
         if department_overview.empty:
-            render_empty_state("Немає даних", "Таблиця кафедр з'явиться після імпорту.")
+            render_empty_state("Немає даних", "Таблиця кафедр з'явиться після імпорту структури.")
         else:
             top_departments = department_overview.sort_values(
                 by=["Викладачі", "Публікації", "Кафедра"],
