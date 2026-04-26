@@ -54,6 +54,10 @@ def _publication_option(row: dict[str, object]) -> str:
     return f"{row.get('title', 'Без назви')} ({year_label})"
 
 
+def _teacher_option(row: dict[str, object]) -> str:
+    return f"{row.get('full_name', 'Без ПІБ')} | {row.get('department_name', 'Без кафедри')} | {row.get('id', '')}"
+
+
 def _render_review_shortcuts(service, publication_id: str, review_note: str) -> None:
     top = st.columns(2, gap="medium")
     if top[0].button("Підтвердити", key=f"pub_confirm_{publication_id}", use_container_width=True):
@@ -89,6 +93,7 @@ def render() -> None:
     year_value = None if selected_year == "Усі роки" else int(selected_year)
 
     publication_rows = service.get_publications(year=year_value)
+    all_teachers = service.get_teachers()
     status_counts = _status_counts(publication_rows)
     available_statuses = [status for status in STATUS_ORDER if status_counts[status] > 0]
     selected_status = filters[1].selectbox("Статус робіт", ["Усі статуси"] + available_statuses)
@@ -184,6 +189,9 @@ def render() -> None:
                 ),
             ],
         )
+        linked_teacher_ids = {
+            str(item).strip() for item in details.get("linked_teacher_ids", []) if str(item or "").strip()
+        }
         review_note = st.text_area(
             "Нотатка модератора",
             value=str(details.get("review_note") or selected_publication.get("review_note") or ""),
@@ -255,6 +263,74 @@ def render() -> None:
                     st.session_state[PUBLICATION_FLASH_KEY] = "Зміни по публікації збережено."
                     st.rerun()
                 st.error("Не вдалося зберегти редагування.")
+
+        with st.expander("Керування авторством", expanded=False):
+            teacher_search = st.text_input(
+                "Знайти викладача для прив'язування",
+                placeholder="Введіть ПІБ або кафедру",
+                key=f"publication_teacher_search_{publication_id}",
+            ).strip().lower()
+            available_teachers = [
+                row
+                for row in all_teachers
+                if str(row.get("id") or "").strip() not in linked_teacher_ids
+                and (
+                    not teacher_search
+                    or teacher_search in str(row.get("full_name") or "").lower()
+                    or teacher_search in str(row.get("department_name") or "").lower()
+                )
+            ]
+            teacher_map = {_teacher_option(row): row for row in available_teachers[:120]}
+            link_columns = st.columns([1.2, 0.8], gap="medium")
+            if teacher_map:
+                selected_teacher_label = link_columns[0].selectbox(
+                    "Додати викладача до публікації",
+                    list(teacher_map.keys()),
+                    key=f"publication_link_teacher_{publication_id}",
+                )
+                selected_teacher = teacher_map[selected_teacher_label]
+                if link_columns[1].button(
+                    "Прив'язати викладача",
+                    key=f"publication_link_button_{publication_id}",
+                    use_container_width=True,
+                ):
+                    teacher_id = str(selected_teacher.get("id") or "").strip()
+                    if service.create_teacher_publication_link(teacher_id, publication_id):
+                        st.session_state[PUBLICATION_FLASH_KEY] = "Викладача прив'язано до публікації."
+                        st.rerun()
+                    st.error("Не вдалося прив'язати викладача.")
+            else:
+                st.caption("Немає доступних викладачів для прив'язування за поточним фільтром.")
+
+            linked_rows = [
+                row for row in all_teachers if str(row.get("id") or "").strip() in linked_teacher_ids
+            ]
+            linked_map = {_teacher_option(row): row for row in linked_rows}
+            if linked_map:
+                unlink_columns = st.columns([1.2, 0.8], gap="medium")
+                selected_linked_label = unlink_columns[0].selectbox(
+                    "Відв'язати викладача",
+                    list(linked_map.keys()),
+                    key=f"publication_unlink_teacher_{publication_id}",
+                )
+                unlink_confirm = st.checkbox(
+                    "Підтверджую видалення зв'язку автора з цією публікацією",
+                    key=f"publication_unlink_confirm_{publication_id}",
+                )
+                if unlink_columns[1].button(
+                    "Видалити зв'язок",
+                    key=f"publication_unlink_button_{publication_id}",
+                    use_container_width=True,
+                ):
+                    if not unlink_confirm:
+                        st.warning("Спочатку підтвердіть видалення зв'язку.")
+                    else:
+                        linked_teacher = linked_map[selected_linked_label]
+                        teacher_id = str(linked_teacher.get("id") or "").strip()
+                        if service.delete_teacher_publication_link(teacher_id, publication_id):
+                            st.session_state[PUBLICATION_FLASH_KEY] = "Зв'язок автора з публікацією видалено."
+                            st.rerun()
+                        st.error("Не вдалося видалити зв'язок.")
 
         with st.expander("Керування записом", expanded=False):
             delete_confirm = st.checkbox(
