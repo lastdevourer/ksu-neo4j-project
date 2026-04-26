@@ -92,13 +92,51 @@ def _render_publication_management(
     service,
     teacher_id: str,
     publications: list[dict[str, object]],
+    all_publications: list[dict[str, object]],
 ) -> None:
-    if not publications:
-        return
-
-    publication_map = {_publication_option(row): row for row in publications}
-
     with st.expander("Керування публікаціями", expanded=False):
+        linked_ids = {str(row.get("id") or "").strip() for row in publications if row.get("id")}
+        candidate_search = st.text_input(
+            "Знайти наявну публікацію для прив'язування",
+            placeholder="Введіть назву або DOI",
+            key=f"teacher_link_search_{teacher_id}",
+        ).strip().lower()
+        available_publications = [
+            row
+            for row in all_publications
+            if str(row.get("id") or "").strip() not in linked_ids
+            and (
+                not candidate_search
+                or candidate_search in str(row.get("title") or "").lower()
+                or candidate_search in str(row.get("doi") or "").lower()
+            )
+        ]
+        available_map = {_publication_option(row): row for row in available_publications[:120]}
+        link_columns = st.columns([1.2, 0.8], gap="medium")
+        if available_map:
+            selected_candidate_label = link_columns[0].selectbox(
+                "Додати наявну роботу",
+                list(available_map.keys()),
+                key=f"teacher_link_publication_{teacher_id}",
+            )
+            selected_candidate = available_map[selected_candidate_label]
+            if link_columns[1].button(
+                "Прив'язати до викладача",
+                key=f"teacher_link_button_{teacher_id}",
+                use_container_width=True,
+            ):
+                candidate_id = str(selected_candidate.get("id") or "").strip()
+                if service.create_teacher_publication_link(teacher_id, candidate_id):
+                    st.session_state[TEACHER_FLASH_KEY] = "Публікацію прив'язано до викладача."
+                    st.rerun()
+                st.error("Не вдалося створити зв'язок. Спробуйте ще раз.")
+        else:
+            st.caption("Для цього викладача не знайдено додаткових наявних публікацій за поточним фільтром.")
+
+        if not publications:
+            return
+
+        publication_map = {_publication_option(row): row for row in publications}
         selected_label = st.selectbox(
             "Запис для редагування",
             list(publication_map.keys()),
@@ -250,6 +288,7 @@ def render() -> None:
             return
 
         publications = service.get_teacher_publications(selected_teacher_id)
+        all_publications = service.get_publications()
         coauthors = service.get_teacher_coauthors(selected_teacher_id)
         readiness_label, readiness_caption = _profile_readiness(profile, publications)
         status_counts = _status_counts(publications)
@@ -323,7 +362,7 @@ def render() -> None:
             )
         else:
             st.dataframe(publications_table, use_container_width=True, hide_index=True)
-            _render_publication_management(service, selected_teacher_id, filtered_publications)
+        _render_publication_management(service, selected_teacher_id, publications, all_publications)
 
     with tabs[1]:
         render_section_heading("Співавтори")
