@@ -736,6 +736,40 @@ class Neo4jService:
             )
         return bool(rows)
 
+    def delete_all_publications(self) -> int:
+        rows = self.run_query("MATCH (p:Publication) RETURN count(p) AS total")
+        total = int(rows[0]["total"] or 0) if rows else 0
+        if total:
+            self.execute("MATCH (p:Publication) DETACH DELETE p")
+            self.log_audit_event(
+                action="publication.delete_all",
+                entity_type="Publication",
+                entity_id="all",
+                summary=f"Повністю очищено всі публікації з бази ({total}).",
+            )
+        return total
+
+    def delete_all_teachers_and_publications(self) -> dict[str, int]:
+        teacher_rows = self.run_query("MATCH (t:Teacher) RETURN count(t) AS total")
+        publication_rows = self.run_query("MATCH (p:Publication) RETURN count(p) AS total")
+        teacher_total = int(teacher_rows[0]["total"] or 0) if teacher_rows else 0
+        publication_total = int(publication_rows[0]["total"] or 0) if publication_rows else 0
+
+        if teacher_total:
+            self.execute("MATCH (t:Teacher) DETACH DELETE t")
+        if publication_total:
+            self.execute("MATCH (p:Publication) DETACH DELETE p")
+
+        if teacher_total or publication_total:
+            self.log_audit_event(
+                action="teacher.delete_all",
+                entity_type="Teacher",
+                entity_id="all",
+                summary="Очищено всіх викладачів і пов'язані публікації.",
+                details=f"Teachers: {teacher_total} | Publications: {publication_total}",
+            )
+        return {"teachers": teacher_total, "publications": publication_total}
+
     def upsert_system_state(self, key: str, values: dict[str, Any]) -> None:
         self.execute(
             """
