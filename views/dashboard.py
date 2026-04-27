@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import streamlit as st
 
-from ui.components import render_empty_state, render_header, render_section_heading, require_service
+from ui.components import (
+    render_empty_state,
+    render_fullscreen_bar_chart_button,
+    render_fullscreen_dataframe_button,
+    render_header,
+    render_section_heading,
+    require_service,
+)
 from ui.formatters import department_overview_dataframe, faculty_overview_dataframe, publication_sources_dataframe
 
 
@@ -49,14 +56,25 @@ def render() -> None:
     overview_columns = st.columns([0.92, 1.08], gap="large")
 
     with overview_columns[0]:
-        render_section_heading("Факультети")
+        header_columns = st.columns([0.72, 0.28], gap="small")
+        with header_columns[0]:
+            render_section_heading("Факультети")
+        with header_columns[1]:
+            render_fullscreen_dataframe_button(
+                "Факультетний зріз",
+                faculty_overview,
+                key="dashboard_faculties_fullscreen",
+                caption="Повна таблиця факультетів, кафедр, викладачів і публікацій.",
+            )
         if faculty_overview.empty:
             render_empty_state("Немає даних", "Факультетний зріз з'явиться після імпорту структури.")
         else:
             st.dataframe(faculty_overview, use_container_width=True, hide_index=True)
 
     with overview_columns[1]:
-        render_section_heading("Кафедри")
+        header_columns = st.columns([0.72, 0.28], gap="small")
+        with header_columns[0]:
+            render_section_heading("Кафедри")
         if department_overview.empty:
             render_empty_state("Немає даних", "Таблиця кафедр з'явиться після імпорту структури.")
         else:
@@ -69,6 +87,13 @@ def render() -> None:
                 ),
             )[:12]
             top_departments = department_overview_dataframe(top_department_rows)
+            with header_columns[1]:
+                render_fullscreen_dataframe_button(
+                    "Кафедральний зріз",
+                    top_departments,
+                    key="dashboard_departments_fullscreen",
+                    caption="Поточний топ кафедр за викладачами та публікаціями.",
+                )
             st.dataframe(top_departments, use_container_width=True, hide_index=True)
 
     total_teachers = int(profile_coverage.get("teachers", 0) or 0)
@@ -88,19 +113,56 @@ def render() -> None:
             progress_columns[3].progress(profile_coverage["with_wos"] / total_teachers, text="Web of Science")
 
         if not publication_sources.empty:
-            render_section_heading("Джерела знайдених публікацій")
+            header_columns = st.columns([0.68, 0.16, 0.16], gap="small")
+            with header_columns[0]:
+                render_section_heading("Джерела знайдених публікацій")
+            chart_source = publication_sources.set_index("Джерело")
+            with header_columns[1]:
+                render_fullscreen_bar_chart_button(
+                    "Розподіл джерел публікацій",
+                    chart_source,
+                    key="dashboard_sources_chart_fullscreen",
+                )
+            with header_columns[2]:
+                render_fullscreen_dataframe_button(
+                    "Таблиця джерел публікацій",
+                    publication_sources,
+                    key="dashboard_sources_table_fullscreen",
+                )
             source_columns = st.columns([0.95, 1.05], gap="large")
             with source_columns[0]:
-                st.bar_chart(publication_sources.set_index("Джерело"), use_container_width=True, height=250)
+                st.bar_chart(chart_source, use_container_width=True, height=250)
             with source_columns[1]:
                 st.dataframe(publication_sources, use_container_width=True, hide_index=True)
 
     with st.expander("Розподіл викладачів і повна структура кафедр", expanded=False):
         if not faculty_overview.empty:
-            render_section_heading("Розподіл викладачів за факультетами")
+            header_columns = st.columns([0.68, 0.16, 0.16], gap="small")
+            with header_columns[0]:
+                render_section_heading("Розподіл викладачів за факультетами")
             chart_source = faculty_overview[["Факультет", "Викладачі"]].set_index("Факультет")
+            with header_columns[1]:
+                render_fullscreen_bar_chart_button(
+                    "Розподіл викладачів за факультетами",
+                    chart_source,
+                    key="dashboard_faculty_chart_fullscreen",
+                )
+            with header_columns[2]:
+                render_fullscreen_dataframe_button(
+                    "Повний зріз факультетів",
+                    faculty_overview,
+                    key="dashboard_faculty_table_secondary_fullscreen",
+                )
             st.bar_chart(chart_source, use_container_width=True, height=300)
 
         if not department_overview.empty:
-            render_section_heading("Уся структура кафедр")
+            header_columns = st.columns([0.72, 0.28], gap="small")
+            with header_columns[0]:
+                render_section_heading("Уся структура кафедр")
+            with header_columns[1]:
+                render_fullscreen_dataframe_button(
+                    "Повна структура кафедр",
+                    department_overview,
+                    key="dashboard_full_department_table_fullscreen",
+                )
             st.dataframe(department_overview, use_container_width=True, hide_index=True)
