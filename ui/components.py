@@ -360,22 +360,25 @@ def apply_theme() -> None:
         }
 
         div.stButton > button[kind="tertiary"] {
-            min-height: 2.5rem;
-            min-width: 2.5rem;
-            padding: 0.35rem 0.5rem;
-            border-radius: 14px;
-            border: 1px solid rgba(96, 165, 250, 0.18);
-            background: rgba(10, 25, 47, 0.72);
+            min-height: auto;
+            min-width: auto;
+            padding: 0;
+            border: none;
+            background: transparent;
             color: var(--text-main);
-            box-shadow: 0 12px 28px rgba(2, 8, 23, 0.24);
-            font-size: 1rem;
-            line-height: 1;
+            box-shadow: none;
+            font-size: 1.25rem;
+            font-weight: 700;
+            line-height: 1.2;
+            justify-content: flex-start;
         }
 
         div.stButton > button[kind="tertiary"]:hover {
-            border-color: rgba(45, 212, 191, 0.42);
-            background: rgba(13, 33, 57, 0.96);
-            box-shadow: 0 16px 34px rgba(45, 212, 191, 0.12);
+            background: transparent;
+            box-shadow: none;
+            color: #8cf0df;
+            text-decoration: underline;
+            transform: none;
         }
 
         div[data-baseweb="select"] > div,
@@ -635,6 +638,67 @@ def render_section_heading(title: str, subtitle: str = "") -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+def render_fullscreen_dataframe_heading(
+    title: str,
+    frame: pd.DataFrame,
+    *,
+    key: str,
+    subtitle: str = "",
+    caption: str = "",
+) -> None:
+    if frame.empty:
+        render_section_heading(title, subtitle)
+        return
+    if st.button(title, key=key, type="tertiary", help="Відкрити на весь екран"):
+        _fullscreen_dataframe_dialog(title, frame, caption)
+    if subtitle:
+        st.markdown(
+            f'<div class="section-heading-subtitle">{escape(subtitle)}</div>',
+            unsafe_allow_html=True,
+        )
+
+
+def render_fullscreen_bar_chart_heading(
+    title: str,
+    data: pd.DataFrame,
+    *,
+    key: str,
+    subtitle: str = "",
+    caption: str = "",
+) -> None:
+    if data.empty:
+        render_section_heading(title, subtitle)
+        return
+    if st.button(title, key=key, type="tertiary", help="Відкрити на весь екран"):
+        _fullscreen_bar_chart_dialog(title, data, caption)
+    if subtitle:
+        st.markdown(
+            f'<div class="section-heading-subtitle">{escape(subtitle)}</div>',
+            unsafe_allow_html=True,
+        )
+
+
+def render_fullscreen_html_heading(
+    title: str,
+    html: str,
+    *,
+    key: str,
+    subtitle: str = "",
+    caption: str = "",
+    height: int = 980,
+) -> None:
+    if not html.strip():
+        render_section_heading(title, subtitle)
+        return
+    if st.button(title, key=key, type="tertiary", help="Відкрити на весь екран"):
+        _fullscreen_html_dialog(title, html, height, caption)
+    if subtitle:
+        st.markdown(
+            f'<div class="section-heading-subtitle">{escape(subtitle)}</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def render_empty_state(title: str, body: str) -> None:
