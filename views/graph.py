@@ -39,11 +39,13 @@ def _faculty_options(service) -> dict[str, str]:
 
 def _render_table(title: str, frame: pd.DataFrame) -> None:
     with st.expander(title, expanded=False):
-        render_fullscreen_dataframe_button(
-            title,
-            frame,
-            key=f"graph_table_fullscreen_{title}",
-        )
+        header_columns = st.columns([0.92, 0.08], gap="small")
+        with header_columns[1]:
+            render_fullscreen_dataframe_button(
+                title,
+                frame,
+                key=f"graph_table_fullscreen_{title}",
+            )
         st.dataframe(frame, use_container_width=True, hide_index=True)
 
 
