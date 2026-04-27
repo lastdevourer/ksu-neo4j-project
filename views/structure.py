@@ -530,12 +530,14 @@ def _render_teachers_tab(service) -> None:
 
         if filtered_teachers:
             filtered_frame = teachers_dataframe(filtered_teachers)
-            render_fullscreen_dataframe_button(
-                "Поточний склад викладачів",
-                filtered_frame,
-                key="structure_teachers_fullscreen",
-                caption="Повний перелік викладачів з активними фільтрами.",
-            )
+            header_columns = st.columns([0.8, 0.2], gap="small")
+            with header_columns[1]:
+                render_fullscreen_dataframe_button(
+                    "Поточний склад викладачів",
+                    filtered_frame,
+                    key="structure_teachers_fullscreen",
+                    caption="Повний перелік викладачів з активними фільтрами.",
+                )
             st.download_button(
                 "Експорт поточного зрізу CSV",
                 _csv_bytes(filtered_frame),
@@ -550,13 +552,16 @@ def _render_teachers_tab(service) -> None:
     if teacher_frame.empty:
         render_empty_state("Викладачів не знайдено", "Спробуйте змінити фільтри, завантажте seed-викладачів або створіть профіль вручну.")
     else:
-        render_section_heading("Поточний склад викладачів")
-        render_fullscreen_dataframe_button(
-            "Поточний склад викладачів",
-            teacher_frame,
-            key="structure_teachers_table_fullscreen",
-            caption="Розширений перегляд таблиці викладачів.",
-        )
+        header_columns = st.columns([0.92, 0.08], gap="small")
+        with header_columns[0]:
+            render_section_heading("Поточний склад викладачів")
+        with header_columns[1]:
+            render_fullscreen_dataframe_button(
+                "Поточний склад викладачів",
+                teacher_frame,
+                key="structure_teachers_table_fullscreen",
+                caption="Розширений перегляд таблиці викладачів.",
+            )
         st.dataframe(teacher_frame, use_container_width=True, hide_index=True)
 
 
@@ -621,20 +626,24 @@ def _render_publications_tab(service) -> None:
     else:
         source_columns = st.columns([0.95, 1.05], gap="large")
         with source_columns[0]:
-            render_fullscreen_bar_chart_button(
-                "Розподіл джерел публікацій",
-                publication_sources,
-                key="structure_publication_sources_chart_fullscreen",
-                caption="Графік покриття публікацій за джерелами.",
-            )
+            header_columns = st.columns([0.9, 0.1], gap="small")
+            with header_columns[1]:
+                render_fullscreen_bar_chart_button(
+                    "Розподіл джерел публікацій",
+                    publication_sources,
+                    key="structure_publication_sources_chart_fullscreen",
+                    caption="Графік покриття публікацій за джерелами.",
+                )
             st.bar_chart(publication_sources.set_index("Джерело"), use_container_width=True, height=280)
         with source_columns[1]:
-            render_fullscreen_dataframe_button(
-                "Джерела публікацій",
-                publication_sources,
-                key="structure_publication_sources_fullscreen",
-                caption="Таблиця зведення по джерелах імпорту.",
-            )
+            header_columns = st.columns([0.9, 0.1], gap="small")
+            with header_columns[1]:
+                render_fullscreen_dataframe_button(
+                    "Джерела публікацій",
+                    publication_sources,
+                    key="structure_publication_sources_fullscreen",
+                    caption="Таблиця зведення по джерелах імпорту.",
+                )
             st.dataframe(publication_sources, use_container_width=True, hide_index=True)
             st.download_button(
                 "Експорт джерел CSV",
