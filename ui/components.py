@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from html import escape
+from typing import Any
 
+import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from config import get_connection_help_text, get_neo4j_config, get_publication_import_config
 from data.loaders import load_teachers_seed
@@ -660,6 +663,82 @@ def render_key_value_card(title: str, items: list[tuple[str, str]]) -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+if hasattr(st, "dialog"):
+    @st.dialog("Перегляд на весь екран", width="large")
+    def _fullscreen_dataframe_dialog(title: str, frame: pd.DataFrame, caption: str = "") -> None:
+        render_section_heading(title, caption)
+        st.dataframe(frame, use_container_width=True, hide_index=True, height=760)
+
+
+    @st.dialog("Перегляд на весь екран", width="large")
+    def _fullscreen_bar_chart_dialog(title: str, data: pd.DataFrame, caption: str = "") -> None:
+        render_section_heading(title, caption)
+        st.bar_chart(data, use_container_width=True, height=760)
+
+
+    @st.dialog("Перегляд на весь екран", width="large")
+    def _fullscreen_html_dialog(title: str, html: str, height: int, caption: str = "") -> None:
+        render_section_heading(title, caption)
+        components.html(html, height=height, scrolling=False)
+else:
+    def _fullscreen_dataframe_dialog(title: str, frame: pd.DataFrame, caption: str = "") -> None:
+        st.info("Повноекранний перегляд недоступний у цьому середовищі.")
+        st.dataframe(frame, use_container_width=True, hide_index=True)
+
+
+    def _fullscreen_bar_chart_dialog(title: str, data: pd.DataFrame, caption: str = "") -> None:
+        st.info("Повноекранний перегляд недоступний у цьому середовищі.")
+        st.bar_chart(data, use_container_width=True)
+
+
+    def _fullscreen_html_dialog(title: str, html: str, height: int, caption: str = "") -> None:
+        st.info("Повноекранний перегляд недоступний у цьому середовищі.")
+        components.html(html, height=height, scrolling=False)
+
+
+def render_fullscreen_dataframe_button(
+    title: str,
+    frame: pd.DataFrame,
+    *,
+    key: str,
+    caption: str = "",
+    label: str = "На весь екран",
+) -> None:
+    if frame.empty:
+        return
+    if st.button(label, key=key, use_container_width=True):
+        _fullscreen_dataframe_dialog(title, frame, caption)
+
+
+def render_fullscreen_bar_chart_button(
+    title: str,
+    data: pd.DataFrame,
+    *,
+    key: str,
+    caption: str = "",
+    label: str = "На весь екран",
+) -> None:
+    if data.empty:
+        return
+    if st.button(label, key=key, use_container_width=True):
+        _fullscreen_bar_chart_dialog(title, data, caption)
+
+
+def render_fullscreen_html_button(
+    title: str,
+    html: str,
+    *,
+    key: str,
+    height: int = 980,
+    caption: str = "",
+    label: str = "На весь екран",
+) -> None:
+    if not html.strip():
+        return
+    if st.button(label, key=key, use_container_width=True):
+        _fullscreen_html_dialog(title, html, height, caption)
 
 
 @st.cache_resource(show_spinner=False)
