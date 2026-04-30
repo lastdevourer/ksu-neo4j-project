@@ -42,7 +42,15 @@ Streamlit-сервіс для обліку, перегляду та аналіт
 - аудит;
 - видалення та масові дії.
 
-Увімкнення відбувається через `ADMIN_MODE=true` у `Streamlit Secrets`.
+Рекомендований спосіб доступу до адмінки: пароль у `Streamlit Secrets`.
+
+```toml
+ADMIN_PASSWORD = "your-password"
+```
+
+Після цього в sidebar з'являється блок `Режим керування`, який розблоковує адмінсторінки тільки для поточної сесії браузера.
+
+`ADMIN_MODE=true` варто використовувати лише як аварійний варіант, якщо потрібно примусово відкрити адмінрежим для всіх відвідувачів.
 
 ## Запуск
 
@@ -69,6 +77,8 @@ WOS_API_KEY = "..."
 PUB_IMPORT_MAX_WORKS_PER_TEACHER = 40
 
 # public/admin mode
+ADMIN_PASSWORD = "your-password"
+# optional emergency switch
 ADMIN_MODE = false
 ```
 

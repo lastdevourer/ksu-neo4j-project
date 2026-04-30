@@ -50,7 +50,13 @@ def _read_bool_setting(key: str, default: bool = False) -> bool:
 
 
 def is_admin_mode() -> bool:
+    if bool(st.session_state.get("admin_unlocked", False)):
+        return True
     return _read_bool_setting("ADMIN_MODE", default=False)
+
+
+def get_admin_password() -> str:
+    return _read_streamlit_secret("ADMIN_PASSWORD") or os.getenv("ADMIN_PASSWORD", "").strip()
 
 
 def get_neo4j_config() -> Neo4jConfig | None:
@@ -137,5 +143,6 @@ def get_connection_help_text() -> str:
         "`NEO4J_PASSWORD`\n"
         "`NEO4J_DATABASE` (необов'язково; якщо є помилка маршрутизації, краще прибрати цей параметр і дати Aura "
         "вибрати домашню базу автоматично)\n"
-        "`ADMIN_MODE` (`true` для внутрішнього режиму редагування, `false` для публічної витрини)"
+        "`ADMIN_PASSWORD` (пароль для розблокування режиму керування всередині тієї ж app)\n"
+        "`ADMIN_MODE` (`true` лише якщо хочете примусово тримати адмінрежим увімкненим для всіх відвідувачів)"
     )
