@@ -24,6 +24,13 @@ REVIEW_OPTIONS = [
     "В чорному списку",
 ]
 SELFTEST_KEY = "data_center_selftest_results"
+DATA_CENTER_EXPORT_OPTIONS = {
+    "Проблемні записи": ("problematic_publications.csv", "problematic"),
+    "Викладачі без профілів": ("teachers_without_profiles.csv", "without_profiles"),
+    "Викладачі без публікацій": ("teachers_without_publications.csv", "without_publications"),
+    "Журнал аудиту": ("audit_log.csv", "audit"),
+    "Самоперевірка": ("selftest_results.csv", "selftest"),
+}
 
 
 def _csv_bytes(frame: pd.DataFrame) -> bytes:
@@ -710,27 +717,24 @@ def render() -> None:
                 or search_value in str(row.get("source") or "").lower()
             ]
 
-        export_columns = st.columns(3, gap="medium")
-        export_columns[0].download_button(
-            "Експорт проблемних записів CSV",
-            _csv_bytes(publications_dataframe(filtered_problematic) if filtered_problematic else pd.DataFrame(columns=["Назва"])),
-            file_name="problematic_publications.csv",
-            mime="text/csv",
-            use_container_width=True,
+        export_choice = st.selectbox(
+            "Експорт з центру даних",
+            ["Проблемні записи", "Викладачі без профілів", "Викладачі без публікацій"],
+            key="data_center_export_choice",
         )
-        export_columns[1].download_button(
-            "Експорт без профілів CSV",
-            _csv_bytes(_teacher_gap_frame(teachers_without_profiles) if teachers_without_profiles else pd.DataFrame(columns=["ПІБ"])),
-            file_name="teachers_without_profiles.csv",
+        export_frames = {
+            "problematic": publications_dataframe(filtered_problematic) if filtered_problematic else pd.DataFrame(columns=["Назва"]),
+            "without_profiles": _teacher_gap_frame(teachers_without_profiles) if teachers_without_profiles else pd.DataFrame(columns=["ПІБ"]),
+            "without_publications": _teacher_gap_frame(teachers_without_publications) if teachers_without_publications else pd.DataFrame(columns=["ПІБ"]),
+        }
+        export_file_name, export_key = DATA_CENTER_EXPORT_OPTIONS[export_choice]
+        st.download_button(
+            f"Завантажити: {export_choice}",
+            _csv_bytes(export_frames[export_key]),
+            file_name=export_file_name,
             mime="text/csv",
             use_container_width=True,
-        )
-        export_columns[2].download_button(
-            "Експорт без публікацій CSV",
-            _csv_bytes(_teacher_gap_frame(teachers_without_publications) if teachers_without_publications else pd.DataFrame(columns=["ПІБ"])),
-            file_name="teachers_without_publications.csv",
-            mime="text/csv",
-            use_container_width=True,
+            key="data_center_export_download",
         )
 
         moderation_layout = st.columns([1.1, 0.9], gap="large")
