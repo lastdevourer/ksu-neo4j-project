@@ -10,7 +10,6 @@ from ui.components import (
     render_fullscreen_html_heading,
     render_header,
     render_section_heading,
-    render_summary_strip,
     require_service,
 )
 from ui.formatters import coauthor_graph_dataframe, department_collaboration_dataframe, graph_edges_dataframe
@@ -19,6 +18,10 @@ from utils.graph_visualization import (
     build_coauthor_graph_html,
     build_department_graph_html,
 )
+
+
+def _csv_bytes(frame: pd.DataFrame) -> bytes:
+    return frame.to_csv(index=False).encode("utf-8-sig")
 
 
 def _department_options(service) -> dict[str, str]:
@@ -37,14 +40,50 @@ def _faculty_options(service) -> dict[str, str]:
     return options
 
 
-def _render_table(title: str, frame: pd.DataFrame) -> None:
-    with st.expander(title, expanded=False):
-        render_fullscreen_dataframe_heading(
+def _render_graph_tabs(
+    *,
+    title: str,
+    html: str,
+    frame: pd.DataFrame,
+    fullscreen_key: str,
+    table_fullscreen_key: str,
+    caption: str,
+    export_name: str,
+    empty_graph_text: str,
+) -> None:
+    visual_tab, table_tab = st.tabs(["Візуалізація", "Таблиця та експорт"])
+
+    with visual_tab:
+        render_fullscreen_html_heading(
             title,
-            frame,
-            key=f"graph_table_fullscreen_{title}",
+            html,
+            key=fullscreen_key,
+            height=980,
+            caption=caption,
         )
-        st.dataframe(frame, use_container_width=True, hide_index=True)
+        if html:
+            components.html(html, height=760, scrolling=False)
+        else:
+            render_empty_state("Інтерактивний граф недоступний", empty_graph_text)
+
+    with table_tab:
+        if frame.empty:
+            render_empty_state("Табличний зріз порожній", "Для поточного режиму поки що немає зв'язків для експорту.")
+        else:
+            render_fullscreen_dataframe_heading(
+                "Табличний зріз графа",
+                frame,
+                key=table_fullscreen_key,
+                caption="Повний список зв'язків для поточного режиму мережі.",
+            )
+            st.download_button(
+                "Експорт поточного графа CSV",
+                _csv_bytes(frame),
+                file_name=export_name,
+                mime="text/csv",
+                use_container_width=True,
+            )
+            st.dataframe(frame, use_container_width=True, hide_index=True)
 
 
 def render() -> None:
@@ -58,6 +97,14 @@ def render() -> None:
     )
     controls = st.columns([1.15, 0.85], gap="large")
     edge_limit = controls[1].slider("Ліміт зв'язків", min_value=20, max_value=240, value=120, step=10)
+
+    with st.expander("Як читати граф", expanded=False):
+        if mode == "Авторство":
+            st.caption("У цій проєкції вузли викладачів з'єднуються з вузлами публікацій. Це зручно для перевірки авторств і покриття записів.")
+        elif mode == "Співавторство викладачів":
+            st.caption("Тут показані прямі зв'язки між викладачами. Чим товстіше ребро, тим більше спільних робіт між парою.")
+        else:
+            st.caption("У цій проєкції видно співпрацю між кафедрами. Це один із найсильніших зрізів для демонстрації реальної мережевої взаємодії.")
 
     if mode == "Авторство":
         department_labels = _department_options(service)
@@ -75,22 +122,17 @@ def render() -> None:
         summary[2].metric("Зв'язки графа", len(edges))
 
         graph_html = build_bipartite_graph_html(edges)
-        render_fullscreen_html_heading(
-            "Інтерактивна мережа авторства",
-            graph_html,
-            key="graph_bipartite_fullscreen",
-            height=980,
+        frame = graph_edges_dataframe(edges)
+        _render_graph_tabs(
+            title="Інтерактивна мережа авторства",
+            html=graph_html,
+            frame=frame,
+            fullscreen_key="graph_bipartite_fullscreen",
+            table_fullscreen_key="graph_bipartite_table_fullscreen",
             caption="Мережа авторства",
+            export_name="graph_authorship_edges.csv",
+            empty_graph_text="Бібліотека візуалізації не підключилася, тому використовуйте табличний зріз нижче.",
         )
-        if graph_html:
-            components.html(graph_html, height=760, scrolling=False)
-        else:
-            render_empty_state(
-                "Інтерактивний граф недоступний",
-                "Бібліотека візуалізації не підключилася, тому нижче показано табличне представлення зв'язків авторства.",
-            )
-            st.dataframe(graph_edges_dataframe(edges), use_container_width=True, hide_index=True)
-        _render_table("Показати таблицю зв'язків", graph_edges_dataframe(edges))
         return
 
     if mode == "Співавторство викладачів":
@@ -112,23 +154,17 @@ def render() -> None:
         summary[2].metric("Сумарні спільні роботи", total_weight)
 
         graph_html = build_coauthor_graph_html(edges)
-        fallback_frame = coauthor_graph_dataframe(edges)
-        render_fullscreen_html_heading(
-            "Інтерактивна мережа співавторства",
-            graph_html,
-            key="graph_coauthor_fullscreen",
-            height=980,
+        frame = coauthor_graph_dataframe(edges)
+        _render_graph_tabs(
+            title="Інтерактивна мережа співавторства",
+            html=graph_html,
+            frame=frame,
+            fullscreen_key="graph_coauthor_fullscreen",
+            table_fullscreen_key="graph_coauthor_table_fullscreen",
             caption="Мережа співавторства викладачів",
+            export_name="graph_coauthors.csv",
+            empty_graph_text="Інтерактивна візуалізація недоступна, але табличний зріз зв'язків збережено.",
         )
-        if graph_html:
-            components.html(graph_html, height=760, scrolling=False)
-        else:
-            render_empty_state(
-                "Інтерактивний граф недоступний",
-                "Показано табличне fallback-представлення пар співавторів.",
-            )
-            st.dataframe(fallback_frame, use_container_width=True, hide_index=True)
-        _render_table("Показати таблицю пар співавторів", fallback_frame)
         return
 
     faculty_labels = _faculty_options(service)
@@ -149,20 +185,14 @@ def render() -> None:
     summary[2].metric("Спільні роботи", total_weight)
 
     graph_html = build_department_graph_html(edges)
-    fallback_frame = department_collaboration_dataframe(edges)
-    render_fullscreen_html_heading(
-        "Інтерактивна міжкафедральна мережа",
-        graph_html,
-        key="graph_department_fullscreen",
-        height=980,
+    frame = department_collaboration_dataframe(edges)
+    _render_graph_tabs(
+        title="Інтерактивна міжкафедральна мережа",
+        html=graph_html,
+        frame=frame,
+        fullscreen_key="graph_department_fullscreen",
+        table_fullscreen_key="graph_department_table_fullscreen",
         caption="Міжкафедральна мережа",
+        export_name="graph_department_collaboration.csv",
+        empty_graph_text="Інтерактивна візуалізація недоступна, але нижче доступний експорт поточного зрізу.",
     )
-    if graph_html:
-        components.html(graph_html, height=760, scrolling=False)
-    else:
-        render_empty_state(
-            "Інтерактивний граф недоступний",
-            "Показано табличне fallback-представлення міжкафедральних зв'язків.",
-        )
-        st.dataframe(fallback_frame, use_container_width=True, hide_index=True)
-    _render_table("Показати таблицю міжкафедральних зв'язків", fallback_frame)
