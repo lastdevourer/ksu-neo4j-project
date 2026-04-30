@@ -13,6 +13,7 @@ def render_sidebar(
 ) -> str:
     selected_page = current_page
     counts = service.get_overview_counts()
+    coverage = service.get_profile_coverage()
     section_order = ["Огляд", "Каталог", "Адміністрування"]
 
     with st.sidebar:
@@ -46,12 +47,15 @@ def render_sidebar(
                     ):
                         selected_page = page_key
 
-        with st.expander("Швидкий стан бази", expanded=False):
+        with st.expander("Стан бази", expanded=False):
             status_columns = st.columns(2, gap="small")
             status_columns[0].metric("Факультети", counts["faculties"])
             status_columns[1].metric("Кафедри", counts["departments"])
             status_columns[0].metric("Викладачі", counts["teachers"])
             status_columns[1].metric("Публікації", counts["publications"])
-            st.caption("Імпорт, очищення та сервісні дії зібрано на сторінках `Структура` та `Центр даних`.")
+            st.caption(
+                f"Профілі для імпорту: {coverage['with_any_profile']} / {coverage['teachers']}. "
+                "Операційні дії зібрано на сторінках `Структура` та `Центр даних`."
+            )
 
     return selected_page
