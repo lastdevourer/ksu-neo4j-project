@@ -46,6 +46,19 @@ def _scoped_teacher_rows(teachers: list[dict], publications: list[dict]) -> list
     return rows
 
 
+def _report_package_frame(sections: list[tuple[str, pd.DataFrame]]) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    for section_name, frame in sections:
+        if frame.empty:
+            continue
+        section_frame = frame.copy()
+        section_frame.insert(0, "Розділ", section_name)
+        frames.append(section_frame)
+    if not frames:
+        return pd.DataFrame(columns=["Розділ"])
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
 def render() -> None:
     service = require_service()
     render_header("Аналітика", "")
@@ -62,8 +75,10 @@ def render() -> None:
     profile_coverage = service.get_profile_coverage()
     source_rows = publication_sources_dataframe(build_publication_source_rows(scoped_publications))
     scoped_publication_count = len(scoped_publications)
+    teachers_with_publications = sum(1 for row in _scoped_teacher_rows(all_teachers, scoped_publications) if int(row.get("publications", 0) or 0) > 0)
+    average_publications = (scoped_publication_count / teachers_with_publications) if teachers_with_publications else 0.0
 
-    highlights = st.columns(3, gap="medium")
+    highlights = st.columns(4, gap="medium")
     with highlights[0]:
         render_summary_strip(
             "Лідер публікацій",
@@ -81,6 +96,12 @@ def render() -> None:
             "Центральний вузол",
             centrality_rows[0]["teacher"] if centrality_rows else "—",
             f"Публікацій у контурі: {scoped_publication_count}",
+        )
+    with highlights[3]:
+        render_summary_strip(
+            "Середнє навантаження",
+            f"{average_publications:.1f}",
+            f"викладачів з роботами: {teachers_with_publications}",
         )
 
     render_section_heading("Пояснення для диплома")
@@ -122,6 +143,33 @@ def render() -> None:
             "Експорт джерел",
             _csv_bytes(source_rows if not source_rows.empty else pd.DataFrame(columns=["Джерело"])),
             file_name="publication_sources.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+    package_frame = _report_package_frame(
+        [
+            ("Топ викладачів", top_teachers_export),
+            ("Пари співавторів", top_pairs_export),
+            ("Centrality", centrality_export),
+            ("Джерела публікацій", source_rows),
+        ]
+    )
+    package_actions = st.columns(2, gap="medium")
+    with package_actions[0]:
+        st.download_button(
+            "Експорт аналітичного пакета CSV",
+            _csv_bytes(package_frame),
+            file_name="analytics_package.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    with package_actions[1]:
+        scoped_teachers_frame = teachers_dataframe(_scoped_teacher_rows(all_teachers, scoped_publications))
+        st.download_button(
+            "Експорт викладачів контуру CSV",
+            _csv_bytes(scoped_teachers_frame if not scoped_teachers_frame.empty else pd.DataFrame(columns=["ПІБ"])),
+            file_name="scoped_teachers.csv",
             mime="text/csv",
             use_container_width=True,
         )
@@ -208,70 +256,144 @@ def render() -> None:
             )
             st.dataframe(source_rows, use_container_width=True, hide_index=True)
 
-    render_section_heading("Звіт кафедри", "Швидкий експорт аналітичного зрізу для конкретної кафедри.")
+    render_section_heading("Звіти", "Швидкий експорт аналітичних зрізів для кафедри або факультету.")
     departments = service.get_departments()
-    department_labels = {f"{row['name']} ({row['code']})": row["code"] for row in departments}
-    if not department_labels:
-        render_empty_state("Кафедри недоступні", "Спочатку потрібно заповнити довідник факультетів і кафедр.")
-        return
+    faculties = service.get_faculty_overview()
+    report_department_tab, report_faculty_tab = st.tabs(["Звіт кафедри", "Звіт факультету"])
 
-    selected_department_label = st.selectbox("Оберіть кафедру для звіту", list(department_labels.keys()))
-    selected_department_code = department_labels[selected_department_label]
-    scoped_department_teachers = _scoped_teacher_rows(
-        service.get_teachers(department_code=selected_department_code),
-        scoped_publications,
-    )
-    teacher_report_frame = teachers_dataframe(scoped_department_teachers)
-    department_overview_rows = [row for row in service.get_department_overview() if row.get("code") == selected_department_code]
-    department_frame = department_overview_dataframe(department_overview_rows)
-    teachers_in_scope = len(scoped_department_teachers)
-    publications_in_scope = sum(int(row.get("publications", 0) or 0) for row in scoped_department_teachers)
-    profiles_ready = sum(
-        1
-        for row in scoped_department_teachers
-        if any(str(row.get(key) or "").strip() for key in ("orcid", "google_scholar", "scopus", "web_of_science"))
-    )
-
-    report_summary = st.columns(3, gap="medium")
-    report_summary[0].metric("Викладачі кафедри", teachers_in_scope)
-    report_summary[1].metric("Публікації в контурі", publications_in_scope)
-    report_summary[2].metric("Профілі готові", profiles_ready)
-
-    report_columns = st.columns([1.15, 0.85], gap="large")
-    with report_columns[0]:
-        if teacher_report_frame.empty:
-            render_section_heading("Звіт кафедри: викладачі")
-            render_empty_state(
-                "Дані кафедри порожні",
-                "За поточним контуром даних у вибраної кафедри немає записів для звіту.",
-            )
+    with report_department_tab:
+        department_labels = {f"{row['name']} ({row['code']})": row["code"] for row in departments}
+        if not department_labels:
+            render_empty_state("Кафедри недоступні", "Спочатку потрібно заповнити довідник факультетів і кафедр.")
         else:
-            render_fullscreen_dataframe_heading(
-                "Звіт кафедри: викладачі",
-                teacher_report_frame,
-                key="analytics_department_teachers_fullscreen",
+            selected_department_label = st.selectbox("Оберіть кафедру для звіту", list(department_labels.keys()))
+            selected_department_code = department_labels[selected_department_label]
+            scoped_department_teachers = _scoped_teacher_rows(
+                service.get_teachers(department_code=selected_department_code),
+                scoped_publications,
             )
-            st.dataframe(teacher_report_frame, use_container_width=True, hide_index=True)
-    with report_columns[1]:
-        if not department_frame.empty:
-            render_fullscreen_dataframe_heading(
-                "Звіт кафедри: огляд",
-                department_frame,
-                key="analytics_department_overview_fullscreen",
+            teacher_report_frame = teachers_dataframe(scoped_department_teachers)
+            department_overview_rows = [row for row in service.get_department_overview() if row.get("code") == selected_department_code]
+            department_frame = department_overview_dataframe(department_overview_rows)
+            teachers_in_scope = len(scoped_department_teachers)
+            publications_in_scope = sum(int(row.get("publications", 0) or 0) for row in scoped_department_teachers)
+            profiles_ready = sum(
+                1
+                for row in scoped_department_teachers
+                if any(str(row.get(key) or "").strip() for key in ("orcid", "google_scholar", "scopus", "web_of_science"))
             )
-            st.dataframe(department_frame, use_container_width=True, hide_index=True)
-        report_csv = pd.concat(
-            [
-                department_frame.assign(Тип_звіту="Огляд кафедри") if not department_frame.empty else pd.DataFrame(),
-                teacher_report_frame.assign(Тип_звіту="Викладачі кафедри") if not teacher_report_frame.empty else pd.DataFrame(),
-            ],
-            ignore_index=True,
-            sort=False,
-        )
-        st.download_button(
-            "Завантажити звіт кафедри CSV",
-            _csv_bytes(report_csv if not report_csv.empty else pd.DataFrame(columns=["Тип_звіту"])),
-            file_name=f"department_report_{selected_department_code}.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
+
+            report_summary = st.columns(3, gap="medium")
+            report_summary[0].metric("Викладачі кафедри", teachers_in_scope)
+            report_summary[1].metric("Публікації в контурі", publications_in_scope)
+            report_summary[2].metric("Профілі готові", profiles_ready)
+
+            report_columns = st.columns([1.15, 0.85], gap="large")
+            with report_columns[0]:
+                if teacher_report_frame.empty:
+                    render_section_heading("Звіт кафедри: викладачі")
+                    render_empty_state(
+                        "Дані кафедри порожні",
+                        "За поточним контуром даних у вибраної кафедри немає записів для звіту.",
+                    )
+                else:
+                    render_fullscreen_dataframe_heading(
+                        "Звіт кафедри: викладачі",
+                        teacher_report_frame,
+                        key="analytics_department_teachers_fullscreen",
+                    )
+                    st.dataframe(teacher_report_frame, use_container_width=True, hide_index=True)
+            with report_columns[1]:
+                if not department_frame.empty:
+                    render_fullscreen_dataframe_heading(
+                        "Звіт кафедри: огляд",
+                        department_frame,
+                        key="analytics_department_overview_fullscreen",
+                    )
+                    st.dataframe(department_frame, use_container_width=True, hide_index=True)
+                report_csv = _report_package_frame(
+                    [
+                        ("Огляд кафедри", department_frame),
+                        ("Викладачі кафедри", teacher_report_frame),
+                    ]
+                )
+                st.download_button(
+                    "Завантажити звіт кафедри CSV",
+                    _csv_bytes(report_csv),
+                    file_name=f"department_report_{selected_department_code}.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+
+    with report_faculty_tab:
+        faculty_labels = {f"{row['name']} ({row['code']})": row["code"] for row in faculties if row.get("code")}
+        if not faculty_labels:
+            render_empty_state("Факультети недоступні", "Спочатку потрібно заповнити структуру університету.")
+        else:
+            selected_faculty_label = st.selectbox("Оберіть факультет для звіту", list(faculty_labels.keys()))
+            selected_faculty_code = faculty_labels[selected_faculty_label]
+            scoped_faculty_teachers = _scoped_teacher_rows(
+                [row for row in all_teachers if str(row.get("faculty_code") or "") == selected_faculty_code],
+                scoped_publications,
+            )
+            faculty_teacher_frame = teachers_dataframe(scoped_faculty_teachers)
+            faculty_frame = faculty_overview_dataframe([row for row in faculties if row.get("code") == selected_faculty_code])
+            faculty_department_frame = department_overview_dataframe(
+                [row for row in service.get_department_overview() if row.get("faculty_code") == selected_faculty_code]
+            )
+
+            faculty_summary = st.columns(3, gap="medium")
+            faculty_summary[0].metric("Кафедри факультету", len(faculty_department_frame))
+            faculty_summary[1].metric(
+                "Викладачі факультету",
+                len(scoped_faculty_teachers),
+            )
+            faculty_summary[2].metric(
+                "Публікації в контурі",
+                sum(int(row.get("publications", 0) or 0) for row in scoped_faculty_teachers),
+            )
+
+            faculty_columns = st.columns([1.12, 0.88], gap="large")
+            with faculty_columns[0]:
+                if faculty_teacher_frame.empty:
+                    render_section_heading("Звіт факультету: викладачі")
+                    render_empty_state(
+                        "Дані факультету порожні",
+                        "За поточним контуром даних у вибраного факультету немає записів для звіту.",
+                    )
+                else:
+                    render_fullscreen_dataframe_heading(
+                        "Звіт факультету: викладачі",
+                        faculty_teacher_frame,
+                        key="analytics_faculty_teachers_fullscreen",
+                    )
+                    st.dataframe(faculty_teacher_frame, use_container_width=True, hide_index=True)
+            with faculty_columns[1]:
+                if not faculty_frame.empty:
+                    render_fullscreen_dataframe_heading(
+                        "Звіт факультету: огляд",
+                        faculty_frame,
+                        key="analytics_faculty_overview_fullscreen",
+                    )
+                    st.dataframe(faculty_frame, use_container_width=True, hide_index=True)
+                if not faculty_department_frame.empty:
+                    render_fullscreen_dataframe_heading(
+                        "Звіт факультету: кафедри",
+                        faculty_department_frame,
+                        key="analytics_faculty_departments_fullscreen",
+                    )
+                    st.dataframe(faculty_department_frame, use_container_width=True, hide_index=True)
+                faculty_report_csv = _report_package_frame(
+                    [
+                        ("Огляд факультету", faculty_frame),
+                        ("Кафедри факультету", faculty_department_frame),
+                        ("Викладачі факультету", faculty_teacher_frame),
+                    ]
+                )
+                st.download_button(
+                    "Завантажити звіт факультету CSV",
+                    _csv_bytes(faculty_report_csv),
+                    file_name=f"faculty_report_{selected_faculty_code}.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
