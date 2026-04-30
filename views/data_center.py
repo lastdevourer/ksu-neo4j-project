@@ -25,6 +25,10 @@ REVIEW_OPTIONS = [
 ]
 
 
+def _csv_bytes(frame: pd.DataFrame) -> bytes:
+    return frame.to_csv(index=False).encode("utf-8-sig")
+
+
 def _show_flash_message() -> None:
     message = st.session_state.pop(FLASH_KEY, "")
     if message:
@@ -309,6 +313,13 @@ def _render_audit_tab(service) -> None:
             caption="Повний журнал змін і модераційних дій.",
         )
         st.dataframe(audit_frame, use_container_width=True, hide_index=True)
+        st.download_button(
+            "Експорт аудиту CSV",
+            _csv_bytes(audit_frame),
+            file_name="audit_log.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
     with top[1]:
         last_event = events[0]
         render_key_value_card(
@@ -353,7 +364,7 @@ def _render_duplicate_candidates(service, all_publications: list[dict[str, objec
         )
         st.download_button(
             "Експорт CSV",
-            duplicate_frame.to_csv(index=False).encode("utf-8-sig"),
+            _csv_bytes(duplicate_frame),
             file_name="duplicate_candidates.csv",
             mime="text/csv",
             use_container_width=True,
@@ -586,6 +597,29 @@ def render() -> None:
                 or search_value in str(row.get("doi") or "").lower()
                 or search_value in str(row.get("source") or "").lower()
             ]
+
+        export_columns = st.columns(3, gap="medium")
+        export_columns[0].download_button(
+            "Експорт проблемних записів CSV",
+            _csv_bytes(publications_dataframe(filtered_problematic) if filtered_problematic else pd.DataFrame(columns=["Назва"])),
+            file_name="problematic_publications.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+        export_columns[1].download_button(
+            "Експорт без профілів CSV",
+            _csv_bytes(_teacher_gap_frame(teachers_without_profiles) if teachers_without_profiles else pd.DataFrame(columns=["ПІБ"])),
+            file_name="teachers_without_profiles.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+        export_columns[2].download_button(
+            "Експорт без публікацій CSV",
+            _csv_bytes(_teacher_gap_frame(teachers_without_publications) if teachers_without_publications else pd.DataFrame(columns=["ПІБ"])),
+            file_name="teachers_without_publications.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
 
         moderation_layout = st.columns([1.1, 0.9], gap="large")
         with moderation_layout[0]:
