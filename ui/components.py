@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from html import escape
+import re
+from html import escape, unescape
 from typing import Any
 
 import pandas as pd
@@ -601,13 +602,28 @@ def apply_theme() -> None:
 
 
 def render_header(title: str, subtitle: str = "", kicker: str = "") -> None:
-    kicker_markup = f'<div class="hero-kicker">{escape(kicker)}</div>' if kicker else ""
-    subtitle_markup = f'<div class="hero-subtitle">{escape(subtitle)}</div>' if subtitle else ""
+    normalized_title = str(title or "").strip()
+    normalized_subtitle = str(subtitle or "").strip()
+    combined = "\n".join(part for part in [normalized_title, normalized_subtitle] if part)
+    if "hero-title" in combined or "hero-subtitle" in combined:
+        title_match = re.search(r'hero-title[^>]*>(.*?)</div>', combined, re.IGNORECASE | re.DOTALL)
+        subtitle_match = re.search(r'hero-subtitle[^>]*>(.*?)</div>', combined, re.IGNORECASE | re.DOTALL)
+        if title_match:
+            normalized_title = title_match.group(1)
+        if subtitle_match:
+            normalized_subtitle = subtitle_match.group(1)
+
+    normalized_title = re.sub(r"<[^>]+>", "", normalized_title)
+    normalized_subtitle = re.sub(r"<[^>]+>", "", normalized_subtitle)
+    normalized_kicker = re.sub(r"<[^>]+>", "", str(kicker or "").strip())
+
+    kicker_markup = f'<div class="hero-kicker">{escape(unescape(normalized_kicker))}</div>' if normalized_kicker else ""
+    subtitle_markup = f'<div class="hero-subtitle">{escape(unescape(normalized_subtitle))}</div>' if normalized_subtitle else ""
     st.markdown(
         f"""
         <div class="hero-card">
             {kicker_markup}
-            <div class="hero-title">{escape(title)}</div>
+            <div class="hero-title">{escape(unescape(normalized_title))}</div>
             {subtitle_markup}
         </div>
         """,
