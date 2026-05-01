@@ -81,13 +81,14 @@ def apply_theme() -> None:
         }
 
         [data-testid="stHeader"] {
-            background: rgba(7, 17, 31, 0.35);
-            backdrop-filter: blur(12px);
+            background: rgba(7, 17, 31, 0.82);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(96, 165, 250, 0.08);
         }
 
         .block-container {
             max-width: 1320px;
-            padding-top: 3.9rem;
+            padding-top: 4.4rem;
             padding-bottom: 2.4rem;
         }
 
@@ -528,43 +529,35 @@ def apply_theme() -> None:
         }
 
         .sidebar-brand {
-            position: relative;
-            overflow: hidden;
-            margin-bottom: 1rem;
-            padding: 1rem 1rem 1.05rem;
-            border-radius: 22px;
-            border: 1px solid rgba(56, 189, 248, 0.14);
-            background:
-                linear-gradient(160deg, rgba(15, 39, 69, 0.98), rgba(7, 20, 38, 0.98));
-            box-shadow: var(--shadow);
-        }
-
-        .sidebar-brand::before {
-            content: "";
-            position: absolute;
-            inset: -20% auto auto 55%;
-            width: 120px;
-            height: 120px;
-            border-radius: 999px;
-            background: radial-gradient(circle, rgba(45, 212, 191, 0.25), transparent 70%);
-            pointer-events: none;
+            margin-bottom: 1.1rem;
+            padding: 0.1rem 0 0.95rem;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
         }
 
         .sidebar-brand-kicker {
-            color: #8cf0df;
+            color: var(--text-muted);
             text-transform: uppercase;
-            font-size: 0.72rem;
-            letter-spacing: 0.12em;
+            font-size: 0.7rem;
+            letter-spacing: 0.16em;
             font-weight: 800;
-            margin-bottom: 0.45rem;
+            margin-bottom: 0.24rem;
         }
 
         .sidebar-brand-title {
             font-family: "Space Grotesk", "Manrope", sans-serif;
-            font-size: 1.15rem;
+            font-size: 1.02rem;
             font-weight: 700;
             color: var(--text-main);
-            line-height: 1.2;
+            line-height: 1.28;
+        }
+
+        .sidebar-section-label {
+            margin: 1rem 0 0.55rem;
+            color: var(--text-soft);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 0.76rem;
+            font-weight: 800;
         }
 
         .sidebar-model {
@@ -584,7 +577,7 @@ def apply_theme() -> None:
 
         @media (max-width: 960px) {
             .block-container {
-                padding-top: 2.6rem;
+                padding-top: 3.05rem;
                 padding-bottom: 1.4rem;
             }
 
