@@ -5,7 +5,7 @@ from importlib import import_module
 import streamlit as st
 
 from config import is_admin_mode
-from ui.components import require_service, setup_page
+from ui.components import setup_page
 from ui.sidebar import render_sidebar
 
 
@@ -54,10 +54,9 @@ def _render_page(page_meta: dict[str, object]) -> None:
 
 
 setup_page("Академічна мережа KSU")
-service = require_service()
 visible_pages = _visible_pages()
 current_page = _resolve_current_page(visible_pages)
-selected_page = render_sidebar(service, current_page=current_page, pages=visible_pages)
+selected_page = render_sidebar(current_page=current_page, pages=visible_pages)
 
 if selected_page != current_page:
     st.session_state["current_page"] = selected_page
