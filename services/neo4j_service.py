@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from neo4j import GraphDatabase
+from neo4j import GraphDatabase, Query
 
 
 SCHEMA_STATEMENTS = [
@@ -35,28 +35,37 @@ LEGACY_MIGRATION_STATEMENTS = [
     """,
 ]
 
+DEFAULT_CONNECTION_TIMEOUT_SECONDS = 8
+DEFAULT_QUERY_TIMEOUT_SECONDS = 15
+
 
 class Neo4jService:
     def __init__(self, uri: str, user: str, password: str, database: str = ""):
-        self.driver = GraphDatabase.driver(uri, auth=(user, password))
+        self.driver = GraphDatabase.driver(
+            uri,
+            auth=(user, password),
+            connection_timeout=DEFAULT_CONNECTION_TIMEOUT_SECONDS,
+            connection_acquisition_timeout=DEFAULT_CONNECTION_TIMEOUT_SECONDS,
+            max_transaction_retry_time=5,
+        )
         self.database = database
+        self.query_timeout_seconds = DEFAULT_QUERY_TIMEOUT_SECONDS
 
     def _session_kwargs(self) -> dict[str, str]:
         return {"database": self.database} if self.database else {}
 
     def verify_connection(self) -> None:
-        self.driver.verify_connectivity()
         with self.driver.session(**self._session_kwargs()) as session:
-            session.run("RETURN 1 AS ok").consume()
+            session.run(Query("RETURN 1 AS ok", timeout=self.query_timeout_seconds)).consume()
 
     def run_query(self, query: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         with self.driver.session(**self._session_kwargs()) as session:
-            result = session.run(query, params or {})
+            result = session.run(Query(query, timeout=self.query_timeout_seconds), params or {})
             return [record.data() for record in result]
 
     def execute(self, query: str, params: dict[str, Any] | None = None) -> None:
         with self.driver.session(**self._session_kwargs()) as session:
-            session.run(query, params or {})
+            session.run(Query(query, timeout=self.query_timeout_seconds), params or {})
 
     @staticmethod
     def _now_utc() -> str:
