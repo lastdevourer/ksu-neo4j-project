@@ -6,7 +6,7 @@ from full_app import run as run_full_app
 from ui.components import setup_page
 
 
-setup_page("Аналітика наукових публікацій KSU")
+setup_page("Академічний портал KSU")
 
 try:
     del st.query_params["mode"]
