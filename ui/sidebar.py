@@ -19,7 +19,7 @@ def render_sidebar(
             """
             <div class="sidebar-brand">
                 <div class="sidebar-brand-kicker">KSU</div>
-                <div class="sidebar-brand-title">Наукова аналітика</div>
+                <div class="sidebar-brand-title">Академічний портал</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -34,7 +34,10 @@ def render_sidebar(
             if not section_pages:
                 continue
 
-            st.markdown(f"**{section_name}**")
+            st.markdown(
+                f'<div class="sidebar-section-label">{section_name}</div>',
+                unsafe_allow_html=True,
+            )
             for page_key, page_meta in section_pages:
                 button_type = "primary" if page_key == current_page else "secondary"
                 if st.button(
