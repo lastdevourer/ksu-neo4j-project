@@ -34,10 +34,43 @@ def department_overview_dataframe(rows: list[dict]) -> pd.DataFrame:
             "publications": "Публікації",
         }
     )
-    return renamed[["Код кафедри", "Кафедра", "Факультет", "Викладачі", "Публікації"]]
+    return renamed[["Кафедра", "Факультет", "Викладачі", "Публікації"]]
+
+
+def department_overview_dataframe_admin(rows: list[dict]) -> pd.DataFrame:
+    df = _frame(rows)
+    if df.empty:
+        return df
+    renamed = df.rename(
+        columns={
+            "code": "Код кафедри",
+            "name": "Кафедра",
+            "faculty_code": "Код факультету",
+            "faculty_name": "Факультет",
+            "teachers": "Викладачі",
+            "publications": "Публікації",
+        }
+    )
+    return renamed[["Код кафедри", "Кафедра", "Код факультету", "Факультет", "Викладачі", "Публікації"]]
 
 
 def faculty_overview_dataframe(rows: list[dict]) -> pd.DataFrame:
+    df = _frame(rows)
+    if df.empty:
+        return df
+    renamed = df.rename(
+        columns={
+            "code": "Код факультету",
+            "name": "Факультет",
+            "departments": "Кафедри",
+            "teachers": "Викладачі",
+            "publications": "Публікації",
+        }
+    )
+    return renamed[["Факультет", "Кафедри", "Викладачі", "Публікації"]]
+
+
+def faculty_overview_dataframe_admin(rows: list[dict]) -> pd.DataFrame:
     df = _frame(rows)
     if df.empty:
         return df
