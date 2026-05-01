@@ -57,34 +57,6 @@ def render() -> None:
     else:
         st.success("База заповнена. Можна переходити до аналітики, графа та перегляду даних.")
 
-    total_teachers = int(profile_coverage.get("teachers", 0) or 0)
-    teachers_with_any_profile = int(profile_coverage.get("with_any_profile", 0) or 0)
-    departments_with_publications = sum(1 for row in department_overview_rows if int(row.get("publications", 0) or 0) > 0)
-    average_publications = (counts["publications"] / counts["teachers"]) if counts["teachers"] else 0.0
-
-    spotlight = st.columns(3, gap="medium")
-    with spotlight[0]:
-        render_empty_state(
-            "Оперативний стан",
-            "База вже придатна для огляду структури й аналітики."
-            if counts["publications"]
-            else "Структура готова, але публікаційний контур ще потрібно довантажити.",
-        )
-    with spotlight[1]:
-        render_empty_state(
-            "Покриття профілів",
-            f"{teachers_with_any_profile} з {total_teachers} викладачів уже мають хоча б один зовнішній профіль."
-            if total_teachers
-            else "Після завантаження викладачів тут з'явиться оцінка покриття профілів.",
-        )
-    with spotlight[2]:
-        render_empty_state(
-            "Щільність контуру",
-            f"У середньому {average_publications:.1f} публікацій на викладача, кафедр з роботами: {departments_with_publications}."
-            if counts["teachers"]
-            else "Після наповнення бази тут з'явиться короткий аналітичний зріз.",
-        )
-
     structure_tab, coverage_tab, distribution_tab = st.tabs(
         ["Структура зараз", "Покриття та джерела", "Розподіл і повний зріз"]
     )
