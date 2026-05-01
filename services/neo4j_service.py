@@ -1483,6 +1483,159 @@ class Neo4jService:
             {"year": year},
         )
 
+    def get_top_teachers_analytics(
+        self,
+        *,
+        scope: str = "Усі записи",
+        year_from: int | None = None,
+        year_to: int | None = None,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        return self.run_query(
+            """
+            MATCH (t:Teacher)-[:AUTHORED]->(p:Publication)
+            OPTIONAL MATCH (d:Department)-[:HAS_TEACHER]->(t)
+            WITH
+                t,
+                d,
+                p,
+                [source IN split(coalesce(p.source, ""), ";") | trim(source)] AS source_names
+            WITH
+                t,
+                d,
+                p,
+                CASE
+                    WHEN coalesce(p.review_status, "") <> "" THEN p.review_status
+                    WHEN any(source_name IN source_names WHERE source_name IN ["Scopus", "Web of Science"]) THEN "Офіційно підтверджено"
+                    WHEN coalesce(p.confidence, 0.0) >= 0.9 THEN "Підтверджено"
+                    WHEN coalesce(p.confidence, 0.0) >= 0.72 THEN "Кандидат"
+                    ELSE "Потребує перевірки"
+                END AS resolved_status
+            WHERE
+                (
+                    $scope = "Усі записи"
+                    OR ($scope = "Підтверджені" AND resolved_status IN ["Офіційно підтверджено", "Підтверджено"])
+                    OR ($scope = "Офіційні" AND resolved_status = "Офіційно підтверджено")
+                )
+                AND (
+                    $year_from IS NULL
+                    OR ($year_to IS NOT NULL AND p.year IS NOT NULL AND p.year >= $year_from AND p.year <= $year_to)
+                )
+            RETURN
+                coalesce(t.full_name, t.name) AS teacher,
+                coalesce(d.name, "") AS department,
+                count(DISTINCT p) AS publications
+            ORDER BY publications DESC, teacher ASC
+            LIMIT $limit
+            """,
+            {
+                "scope": scope,
+                "year_from": year_from,
+                "year_to": year_to,
+                "limit": int(limit),
+            },
+        )
+
+    def get_top_coauthor_pairs_analytics(
+        self,
+        *,
+        scope: str = "Усі записи",
+        year_from: int | None = None,
+        year_to: int | None = None,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        return self.run_query(
+            """
+            MATCH (a:Teacher)-[:AUTHORED]->(p:Publication)<-[:AUTHORED]-(b:Teacher)
+            WHERE coalesce(a.id, a.teacher_id) < coalesce(b.id, b.teacher_id)
+            WITH
+                a,
+                b,
+                p,
+                [source IN split(coalesce(p.source, ""), ";") | trim(source)] AS source_names
+            WITH
+                a,
+                b,
+                p,
+                CASE
+                    WHEN coalesce(p.review_status, "") <> "" THEN p.review_status
+                    WHEN any(source_name IN source_names WHERE source_name IN ["Scopus", "Web of Science"]) THEN "Офіційно підтверджено"
+                    WHEN coalesce(p.confidence, 0.0) >= 0.9 THEN "Підтверджено"
+                    WHEN coalesce(p.confidence, 0.0) >= 0.72 THEN "Кандидат"
+                    ELSE "Потребує перевірки"
+                END AS resolved_status
+            WHERE
+                (
+                    $scope = "Усі записи"
+                    OR ($scope = "Підтверджені" AND resolved_status IN ["Офіційно підтверджено", "Підтверджено"])
+                    OR ($scope = "Офіційні" AND resolved_status = "Офіційно підтверджено")
+                )
+                AND (
+                    $year_from IS NULL
+                    OR ($year_to IS NOT NULL AND p.year IS NOT NULL AND p.year >= $year_from AND p.year <= $year_to)
+                )
+            WITH a, b, count(DISTINCT p) AS shared_publications, collect(DISTINCT p.title)[0..3] AS sample_publications
+            RETURN
+                coalesce(a.full_name, a.name) AS teacher_a,
+                coalesce(b.full_name, b.name) AS teacher_b,
+                shared_publications,
+                sample_publications
+            ORDER BY shared_publications DESC, teacher_a ASC, teacher_b ASC
+            LIMIT $limit
+            """,
+            {
+                "scope": scope,
+                "year_from": year_from,
+                "year_to": year_to,
+                "limit": int(limit),
+            },
+        )
+
+    def get_publication_year_dynamics(
+        self,
+        *,
+        scope: str = "Усі записи",
+        year_from: int | None = None,
+        year_to: int | None = None,
+    ) -> list[dict[str, Any]]:
+        return self.run_query(
+            """
+            MATCH (p:Publication)
+            WITH
+                p,
+                [source IN split(coalesce(p.source, ""), ";") | trim(source)] AS source_names
+            WITH
+                p,
+                CASE
+                    WHEN coalesce(p.review_status, "") <> "" THEN p.review_status
+                    WHEN any(source_name IN source_names WHERE source_name IN ["Scopus", "Web of Science"]) THEN "Офіційно підтверджено"
+                    WHEN coalesce(p.confidence, 0.0) >= 0.9 THEN "Підтверджено"
+                    WHEN coalesce(p.confidence, 0.0) >= 0.72 THEN "Кандидат"
+                    ELSE "Потребує перевірки"
+                END AS resolved_status
+            WHERE
+                p.year IS NOT NULL
+                AND (
+                    $scope = "Усі записи"
+                    OR ($scope = "Підтверджені" AND resolved_status IN ["Офіційно підтверджено", "Підтверджено"])
+                    OR ($scope = "Офіційні" AND resolved_status = "Офіційно підтверджено")
+                )
+                AND (
+                    $year_from IS NULL
+                    OR ($year_to IS NOT NULL AND p.year >= $year_from AND p.year <= $year_to)
+                )
+            RETURN
+                p.year AS year,
+                count(DISTINCT p) AS publications
+            ORDER BY year ASC
+            """,
+            {
+                "scope": scope,
+                "year_from": year_from,
+                "year_to": year_to,
+            },
+        )
+
     def get_graph_edges(self, department_code: str = "", limit: int = 160) -> list[dict[str, Any]]:
         return self.run_query(
             """
