@@ -232,6 +232,7 @@ def apply_theme() -> None:
             padding: 1rem 1.05rem;
             box-shadow: var(--shadow);
             margin-bottom: 0.9rem;
+            text-align: center;
         }
 
         .summary-strip-title {
@@ -314,6 +315,7 @@ def apply_theme() -> None:
             padding: 1.05rem 1.1rem;
             min-height: 7.4rem;
             box-shadow: var(--shadow);
+            text-align: center;
         }
 
         div[data-testid="stMetric"]::after {
@@ -332,6 +334,7 @@ def apply_theme() -> None:
             text-transform: uppercase;
             letter-spacing: 0.06em;
             line-height: 1.35;
+            justify-content: center;
         }
 
         div[data-testid="stMetricLabel"] p {
@@ -344,6 +347,7 @@ def apply_theme() -> None:
             color: var(--text-main);
             font-family: "Space Grotesk", "Manrope", sans-serif;
             letter-spacing: -0.04em;
+            justify-content: center;
         }
 
         div.stButton > button {
