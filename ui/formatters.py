@@ -319,6 +319,55 @@ def audit_events_dataframe(rows: list[dict]) -> pd.DataFrame:
     return renamed[["Час", "Дія", "Сутність", "ID сутності", "Опис", "Деталі", "Ініціатор"]]
 
 
+def import_runs_dataframe(rows: list[dict]) -> pd.DataFrame:
+    df = _frame(rows)
+    if df.empty:
+        return df
+    status_map = {
+        "running": "Виконується",
+        "completed": "Завершено",
+        "failed": "Помилка",
+    }
+    df["status"] = df["status"].apply(lambda value: status_map.get(str(value or "").strip(), str(value or "")))
+    df["include_scholar"] = df["include_scholar"].apply(lambda value: "Так" if bool(value) else "Ні")
+    renamed = df.rename(
+        columns={
+            "started_at": "Початок",
+            "finished_at": "Завершення",
+            "source": "Джерело",
+            "status": "Статус",
+            "include_scholar": "Scholar",
+            "teachers_planned": "Заплановано викладачів",
+            "teachers_processed": "Оброблено викладачів",
+            "teachers_with_publications": "З роботами",
+            "publications_found": "Знайдено публікацій",
+            "authorships_found": "Зв'язки авторства",
+            "warnings_count": "Попередження",
+            "provider_summary": "Покриття джерел",
+            "error_message": "Помилка",
+            "actor": "Ініціатор",
+        }
+    )
+    return renamed[
+        [
+            "Початок",
+            "Завершення",
+            "Статус",
+            "Джерело",
+            "Scholar",
+            "Заплановано викладачів",
+            "Оброблено викладачів",
+            "З роботами",
+            "Знайдено публікацій",
+            "Зв'язки авторства",
+            "Попередження",
+            "Покриття джерел",
+            "Помилка",
+            "Ініціатор",
+        ]
+    ]
+
+
 def coauthor_graph_dataframe(rows: list[dict]) -> pd.DataFrame:
     df = _frame(rows)
     if df.empty:
