@@ -1523,6 +1523,31 @@ class Neo4jService:
             {"department_code": department_code.strip(), "limit": int(limit)},
         )
 
+    def get_teacher_focus_graph(self, teacher_id: str, limit: int = 120) -> list[dict[str, Any]]:
+        return self.run_query(
+            """
+            MATCH (focus:Teacher)
+            WHERE coalesce(focus.id, focus.teacher_id) = $teacher_id
+            MATCH (focus)-[:AUTHORED]->(p:Publication)
+            WITH focus, p
+            ORDER BY coalesce(p.year, 0) DESC, p.title
+            LIMIT $limit
+            MATCH (author:Teacher)-[:AUTHORED]->(p)
+            OPTIONAL MATCH (d:Department)-[:HAS_TEACHER]->(author)
+            RETURN
+                coalesce(author.id, author.teacher_id) AS teacher_id,
+                coalesce(author.full_name, author.name) AS teacher_name,
+                coalesce(d.name, author.department_name, "") AS department_name,
+                coalesce(p.id, p.publication_id) AS publication_id,
+                p.title AS publication_title,
+                p.year AS year,
+                coalesce(focus.id, focus.teacher_id) AS focus_teacher_id,
+                coalesce(focus.full_name, focus.name) AS focus_teacher_name
+            ORDER BY coalesce(p.year, 0) DESC, teacher_name
+            """,
+            {"teacher_id": teacher_id.strip(), "limit": int(limit)},
+        )
+
     def get_department_collaboration_edges(self, faculty_code: str = "", limit: int = 80) -> list[dict[str, Any]]:
         return self.run_query(
             """
