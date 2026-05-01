@@ -56,13 +56,14 @@ def _base_network(height: str = "720px") -> Network | None:
     return net
 
 
-def build_bipartite_graph_html(edges: list[dict]) -> str | None:
+def build_bipartite_graph_html(edges: list[dict], focus_teacher_id: str = "") -> str | None:
     net = _base_network()
     if net is None or not edges:
         return None
 
     teacher_nodes: set[str] = set()
     publication_nodes: set[str] = set()
+    normalized_focus_teacher_id = focus_teacher_id.strip()
 
     for edge in edges:
         teacher_node = f"teacher::{edge['teacher_id']}"
@@ -70,14 +71,15 @@ def build_bipartite_graph_html(edges: list[dict]) -> str | None:
 
         if teacher_node not in teacher_nodes:
             teacher_nodes.add(teacher_node)
+            is_focus_teacher = normalized_focus_teacher_id and str(edge.get("teacher_id") or "").strip() == normalized_focus_teacher_id
             net.add_node(
                 teacher_node,
                 label=edge["teacher_name"],
                 title=f"Викладач: {edge['teacher_name']}<br>Кафедра: {edge['department_name']}",
                 group="teacher",
-                color="#2dd4bf",
+                color="#f59e0b" if is_focus_teacher else "#2dd4bf",
                 shape="dot",
-                size=20,
+                size=26 if is_focus_teacher else 20,
             )
 
         if publication_node not in publication_nodes:
