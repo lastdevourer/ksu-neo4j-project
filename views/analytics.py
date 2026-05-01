@@ -63,6 +63,17 @@ def _filter_publications_for_teachers(publications: list[dict], teachers: list[d
     return filtered_rows
 
 
+def _filter_publications_by_year_range(publications: list[dict], year_range: tuple[int, int] | None) -> list[dict]:
+    if not year_range:
+        return publications
+    year_from, year_to = year_range
+    return [
+        row
+        for row in publications
+        if row.get("year") is not None and year_from <= int(row.get("year") or 0) <= year_to
+    ]
+
+
 def _department_label(row: dict) -> str:
     faculty_name = str(row.get("faculty_name") or "").strip()
     department_name = str(row.get("name") or "").strip()
@@ -103,9 +114,22 @@ def render() -> None:
     controls = st.columns(2, gap="large")
     top_limit = controls[0].slider("Кількість записів у топах", min_value=5, max_value=20, value=10, step=1)
     scope = controls[1].selectbox("Контур даних", ["Усі записи", "Підтверджені", "Офіційні"])
+    available_years = service.get_publication_years()
+    selected_year_range: tuple[int, int] | None = None
+    if available_years:
+        year_min = min(available_years)
+        year_max = max(available_years)
+        selected_year_range = st.slider(
+            "Період публікацій",
+            min_value=year_min,
+            max_value=year_max,
+            value=(year_min, year_max),
+            step=1,
+        )
 
     all_teachers = service.get_teachers()
     scoped_publications = filter_publications_by_scope(service.get_publications(), scope)
+    scoped_publications = _filter_publications_by_year_range(scoped_publications, selected_year_range)
     top_teachers = build_teacher_publication_rankings(scoped_publications, all_teachers, top_limit)
     top_pairs = build_coauthor_pair_rankings(scoped_publications, all_teachers, top_limit)
     centrality_rows = calculate_centrality_rows(build_centrality_edges(scoped_publications, all_teachers))[:top_limit]
@@ -145,6 +169,36 @@ def render() -> None:
         "Аналітичний висновок",
         build_diploma_summary(top_teachers, top_pairs, centrality_rows),
     )
+
+    yearly_counts = (
+        pd.DataFrame(scoped_publications)
+        .dropna(subset=["year"])
+        .groupby("year")
+        .size()
+        .reset_index(name="Публікації")
+        .rename(columns={"year": "Рік"})
+        .sort_values("Рік")
+        if scoped_publications
+        else pd.DataFrame(columns=["Рік", "Публікації"])
+    )
+    if not yearly_counts.empty:
+        render_section_heading("Динаміка публікацій")
+        trend_columns = st.columns([1.05, 0.95], gap="large")
+        with trend_columns[0]:
+            chart_frame = yearly_counts.set_index("Рік")
+            render_fullscreen_bar_chart_heading(
+                "Публікації за роками",
+                chart_frame,
+                key="analytics_yearly_chart_fullscreen",
+            )
+            st.bar_chart(chart_frame, use_container_width=True, height=260)
+        with trend_columns[1]:
+            render_fullscreen_dataframe_heading(
+                "Таблиця динаміки",
+                yearly_counts,
+                key="analytics_yearly_table_fullscreen",
+            )
+            st.dataframe(yearly_counts, use_container_width=True, hide_index=True)
 
     top_teachers_export = top_teachers_dataframe(top_teachers)
     top_pairs_export = top_coauthor_pairs_dataframe(top_pairs)
