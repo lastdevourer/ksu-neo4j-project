@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import pandas as pd
 import streamlit as st
 
@@ -42,6 +43,41 @@ EXPORT_OPTIONS = {
 
 def _csv_bytes(frame: pd.DataFrame) -> bytes:
     return frame.to_csv(index=False).encode("utf-8-sig")
+
+
+def _safe_sheet_name(name: str) -> str:
+    invalid_chars = '[]:*?/\\'
+    cleaned = "".join("_" if char in invalid_chars else char for char in str(name or "").strip())
+    return (cleaned or "Sheet")[:31]
+
+
+def _excel_bytes(sections: list[tuple[str, pd.DataFrame]]) -> bytes:
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        wrote_sheet = False
+        for sheet_name, frame in sections:
+            if frame.empty:
+                continue
+            frame.to_excel(writer, sheet_name=_safe_sheet_name(sheet_name), index=False)
+            wrote_sheet = True
+        if not wrote_sheet:
+            pd.DataFrame([{"Стан": "Немає даних для експорту"}]).to_excel(
+                writer,
+                sheet_name="Summary",
+                index=False,
+            )
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+EXPORT_OPTIONS = {
+    "Топ викладачів": ("top_teachers.csv", "top_teachers", "csv"),
+    "Пари співавторів": ("top_coauthor_pairs.csv", "coauthor_pairs", "csv"),
+    "Centrality": ("centrality.csv", "centrality", "csv"),
+    "Джерела публікацій": ("publication_sources.csv", "sources", "csv"),
+    "Викладачі поточного контуру": ("scoped_teachers.csv", "scoped_teachers", "csv"),
+    "Аналітичний пакет XLSX": ("analytics_package.xlsx", "package_xlsx", "xlsx"),
+}
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -224,23 +260,55 @@ def render() -> None:
 
     render_section_heading("Експорт")
     export_choice = st.selectbox("Що завантажити", list(EXPORT_OPTIONS.keys()), key="analytics_export_choice")
-    export_file_name, export_key = EXPORT_OPTIONS[export_choice]
+    export_file_name, export_key, export_format = EXPORT_OPTIONS[export_choice]
+    summary_export = pd.DataFrame(
+        [
+            {"Показник": "Контур даних", "Значення": scope},
+            {"Показник": "Період від", "Значення": year_from if year_from is not None else "Усі роки"},
+            {"Показник": "Період до", "Значення": year_to if year_to is not None else "Усі роки"},
+            {"Показник": "Публікацій у контурі", "Значення": scoped_publication_count},
+            {"Показник": "Викладачів із роботами", "Значення": teachers_with_publications},
+            {"Показник": "Середнє навантаження", "Значення": round(average_publications, 2)},
+        ]
+    )
     export_frames = {
         "top_teachers": top_teachers_export if not top_teachers_export.empty else pd.DataFrame(columns=["Викладач"]),
         "coauthor_pairs": top_pairs_export if not top_pairs_export.empty else pd.DataFrame(columns=["Викладач 1"]),
         "centrality": centrality_export if not centrality_export.empty else pd.DataFrame(columns=["Викладач"]),
         "sources": source_rows if not source_rows.empty else pd.DataFrame(columns=["Джерело"]),
         "scoped_teachers": scoped_teachers_frame if not scoped_teachers_frame.empty else pd.DataFrame(columns=["ПІБ"]),
-        "package": package_frame if not package_frame.empty else pd.DataFrame(columns=["Розділ"]),
     }
-    st.download_button(
-        f"Завантажити: {export_choice}",
-        _csv_bytes(export_frames[export_key]),
-        file_name=export_file_name,
-        mime="text/csv",
-        use_container_width=True,
-        key="analytics_export_download",
-    )
+    package_sections = [
+        ("Summary", summary_export),
+        ("Top teachers", top_teachers_export),
+        ("Coauthor pairs", top_pairs_export),
+        ("Centrality", centrality_export),
+        ("Sources", source_rows),
+        ("Dynamics", yearly_counts),
+        ("Scoped teachers", scoped_teachers_frame),
+    ]
+    if export_format == "xlsx":
+        try:
+            download_data = _excel_bytes(package_sections)
+            st.download_button(
+                f"Завантажити: {export_choice}",
+                download_data,
+                file_name=export_file_name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key="analytics_export_download",
+            )
+        except ModuleNotFoundError:
+            st.warning("Для XLSX-експорту потрібно оновити середовище з бібліотекою openpyxl.")
+    else:
+        st.download_button(
+            f"Завантажити: {export_choice}",
+            _csv_bytes(export_frames[export_key]),
+            file_name=export_file_name,
+            mime="text/csv",
+            use_container_width=True,
+            key="analytics_export_download",
+        )
 
     if profile_coverage.get("teachers", 0):
         render_section_heading("Готовність профілів до автоматичного імпорту")
