@@ -24,10 +24,8 @@ from ui.formatters import (
 )
 from utils.analytics import (
     build_centrality_edges,
-    build_coauthor_pair_rankings,
     build_diploma_summary,
     build_publication_source_rows,
-    build_teacher_publication_rankings,
     calculate_centrality_rows,
     filter_publications_by_scope,
 )
@@ -45,6 +43,31 @@ EXPORT_OPTIONS = {
 
 def _csv_bytes(frame: pd.DataFrame) -> bytes:
     return frame.to_csv(index=False).encode("utf-8-sig")
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _load_analytics_snapshot(_service, scope: str, top_limit: int, year_range: tuple[int, int] | None) -> dict[str, object]:
+    year_from = year_range[0] if year_range else None
+    year_to = year_range[1] if year_range else None
+    return {
+        "top_teachers": _service.get_top_teachers_analytics(
+            scope=scope,
+            year_from=year_from,
+            year_to=year_to,
+            limit=top_limit,
+        ),
+        "top_pairs": _service.get_top_coauthor_pairs_analytics(
+            scope=scope,
+            year_from=year_from,
+            year_to=year_to,
+            limit=top_limit,
+        ),
+        "yearly_counts": _service.get_publication_year_dynamics(
+            scope=scope,
+            year_from=year_from,
+            year_to=year_to,
+        ),
+    }
 
 
 def _teacher_names(rows: list[dict]) -> set[str]:
@@ -67,11 +90,15 @@ def _filter_publications_by_year_range(publications: list[dict], year_range: tup
     if not year_range:
         return publications
     year_from, year_to = year_range
-    return [
-        row
-        for row in publications
-        if row.get("year") is not None and year_from <= int(row.get("year") or 0) <= year_to
-    ]
+    filtered: list[dict] = []
+    for row in publications:
+        try:
+            year = int(row.get("year"))
+        except (TypeError, ValueError):
+            year = None
+        if year is not None and year_from <= year <= year_to:
+            filtered.append(row)
+    return filtered
 
 
 def _department_label(row: dict) -> str:
@@ -126,12 +153,14 @@ def render() -> None:
             value=(year_min, year_max),
             step=1,
         )
+        st.caption("Публікації без вказаного року не входять у фільтр періоду.")
 
     all_teachers = service.get_teachers()
+    analytics_snapshot = _load_analytics_snapshot(service, scope, top_limit, selected_year_range)
     scoped_publications = filter_publications_by_scope(service.get_publications(), scope)
     scoped_publications = _filter_publications_by_year_range(scoped_publications, selected_year_range)
-    top_teachers = build_teacher_publication_rankings(scoped_publications, all_teachers, top_limit)
-    top_pairs = build_coauthor_pair_rankings(scoped_publications, all_teachers, top_limit)
+    top_teachers = analytics_snapshot["top_teachers"]
+    top_pairs = analytics_snapshot["top_pairs"]
     centrality_rows = calculate_centrality_rows(build_centrality_edges(scoped_publications, all_teachers))[:top_limit]
     profile_coverage = service.get_profile_coverage()
     source_rows = publication_sources_dataframe(build_publication_source_rows(scoped_publications))
@@ -171,14 +200,9 @@ def render() -> None:
     )
 
     yearly_counts = (
-        pd.DataFrame(scoped_publications)
-        .dropna(subset=["year"])
-        .groupby("year")
-        .size()
-        .reset_index(name="Публікації")
-        .rename(columns={"year": "Рік"})
-        .sort_values("Рік")
-        if scoped_publications
+        pd.DataFrame(analytics_snapshot["yearly_counts"])
+        .rename(columns={"year": "Рік", "publications": "Публікації"})
+        if analytics_snapshot["yearly_counts"]
         else pd.DataFrame(columns=["Рік", "Публікації"])
     )
     if not yearly_counts.empty:
