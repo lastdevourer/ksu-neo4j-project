@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-from config import get_connection_help_text, get_neo4j_config
+from config import get_connection_help_text, get_neo4j_config, is_presentation_mode
 from data.loaders import load_teachers_seed
 from data.seed_data import DEPARTMENTS, FACULTIES
 
@@ -28,8 +28,7 @@ def setup_page(title: str) -> None:
 
 
 def apply_theme() -> None:
-    st.markdown(
-        """
+    base_css = """
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap');
 
@@ -611,9 +610,120 @@ def apply_theme() -> None:
             }
         }
         </style>
-        """,
-        unsafe_allow_html=True,
-    )
+        """
+
+    light_override_css = """
+        <style>
+        :root {
+            --bg-main: #f4f8fc;
+            --bg-shell: rgba(255, 255, 255, 0.88);
+            --bg-card: rgba(255, 255, 255, 0.95);
+            --bg-card-strong: rgba(255, 255, 255, 0.98);
+            --bg-card-soft: rgba(247, 250, 253, 0.92);
+            --line-soft: rgba(37, 99, 235, 0.12);
+            --line-strong: rgba(14, 165, 233, 0.18);
+            --text-main: #10233d;
+            --text-soft: #4a6483;
+            --text-muted: #6d83a0;
+            --shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+        }
+
+        .stApp {
+            background:
+                radial-gradient(circle at 10% 15%, rgba(14, 165, 233, 0.08), transparent 26%),
+                radial-gradient(circle at 88% 12%, rgba(45, 212, 191, 0.08), transparent 24%),
+                linear-gradient(180deg, #f7fbff 0%, #eef4fb 48%, #eaf1f8 100%);
+            color: var(--text-main);
+        }
+
+        .stApp::before {
+            opacity: 0.08;
+        }
+
+        [data-testid="stHeader"] {
+            background: rgba(244, 248, 252, 0.88);
+            border-bottom: 1px solid rgba(37, 99, 235, 0.08);
+        }
+
+        .hero-card {
+            background:
+                linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(240, 248, 255, 0.98)),
+                radial-gradient(circle at top right, rgba(14, 165, 233, 0.08), transparent 34%);
+        }
+
+        .hero-kicker {
+            background: rgba(14, 165, 233, 0.08);
+            color: #0f6e92;
+            border-color: rgba(14, 165, 233, 0.14);
+        }
+
+        .info-card,
+        .summary-strip,
+        .kv-card,
+        div[data-testid="stMetric"],
+        [data-testid="stDataFrame"],
+        [data-testid="stAlert"],
+        [data-testid="stExpander"] {
+            background: rgba(255, 255, 255, 0.94) !important;
+        }
+
+        div.stButton > button {
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 249, 254, 0.98));
+            color: var(--text-main);
+            border-color: rgba(37, 99, 235, 0.16);
+            box-shadow: 0 12px 24px rgba(15, 23, 42, 0.06);
+        }
+
+        div.stButton > button[kind="primary"] {
+            background: linear-gradient(180deg, rgba(15, 118, 110, 0.96), rgba(14, 165, 233, 0.92));
+            color: #f8feff;
+        }
+
+        div[data-baseweb="select"] > div,
+        div[data-baseweb="base-input"] > div,
+        .stTextInput > div > div,
+        .stNumberInput > div > div {
+            background: rgba(255, 255, 255, 0.98);
+            border-color: rgba(37, 99, 235, 0.12);
+            box-shadow: 0 10px 20px rgba(15, 23, 42, 0.04);
+        }
+
+        [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, rgba(245, 249, 254, 0.98), rgba(237, 244, 251, 0.98));
+            border-right: 1px solid rgba(37, 99, 235, 0.08);
+        }
+
+        [data-testid="stSidebarNavLink"] {
+            background: rgba(255, 255, 255, 0.4);
+        }
+
+        [data-testid="stSidebarNavLink"][aria-current="page"] {
+            background: linear-gradient(90deg, rgba(14, 165, 233, 0.12), rgba(45, 212, 191, 0.10));
+            border-color: rgba(14, 165, 233, 0.14);
+        }
+
+        [data-testid="stSidebarNavLink"][aria-current="page"] span {
+            color: var(--text-main);
+        }
+
+        [data-testid="stMarkdownContainer"] p code,
+        code {
+            background: rgba(14, 165, 233, 0.08);
+            color: #0f6e92;
+            border-color: rgba(14, 165, 233, 0.12);
+        }
+
+        div[role="dialog"] {
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(243, 248, 253, 0.98)) !important;
+            box-shadow: 0 24px 80px rgba(15, 23, 42, 0.12) !important;
+        }
+        </style>
+        """
+
+    style = base_css
+    if is_presentation_mode():
+        style += light_override_css
+    st.markdown(style, unsafe_allow_html=True)
 
 
 def render_header(title: str, subtitle: str = "", kicker: str = "") -> None:
