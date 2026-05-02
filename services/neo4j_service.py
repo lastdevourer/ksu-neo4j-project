@@ -1801,6 +1801,105 @@ class Neo4jService:
             },
         )
 
+    def get_publication_count_analytics(
+        self,
+        *,
+        scope: str = "Усі записи",
+        year_from: int | None = None,
+        year_to: int | None = None,
+    ) -> int:
+        rows = self.run_query(
+            """
+            MATCH (p:Publication)
+            WITH
+                p,
+                [source IN split(coalesce(p.source, ""), ";") | trim(source)] AS source_names
+            WITH
+                p,
+                CASE
+                    WHEN coalesce(p.review_status, "") <> "" THEN p.review_status
+                    WHEN any(source_name IN source_names WHERE source_name IN ["Scopus", "Web of Science"]) THEN "Офіційно підтверджено"
+                    WHEN coalesce(p.confidence, 0.0) >= 0.9 THEN "Підтверджено"
+                    WHEN coalesce(p.confidence, 0.0) >= 0.72 THEN "Кандидат"
+                    ELSE "Потребує перевірки"
+                END AS resolved_status
+            WHERE
+                (
+                    $scope = "Усі записи"
+                    OR ($scope = "Підтверджені" AND resolved_status IN ["Офіційно підтверджено", "Підтверджено"])
+                    OR ($scope = "Офіційні" AND resolved_status = "Офіційно підтверджено")
+                )
+                AND (
+                    $year_from IS NULL
+                    OR ($year_to IS NOT NULL AND p.year IS NOT NULL AND p.year >= $year_from AND p.year <= $year_to)
+                )
+            RETURN count(DISTINCT p) AS total
+            """,
+            {
+                "scope": scope,
+                "year_from": year_from,
+                "year_to": year_to,
+            },
+        )
+        return int(rows[0].get("total", 0) or 0) if rows else 0
+
+    def get_centrality_edges_analytics(
+        self,
+        *,
+        scope: str = "Усі записи",
+        year_from: int | None = None,
+        year_to: int | None = None,
+    ) -> list[dict[str, Any]]:
+        return self.run_query(
+            """
+            MATCH (a:Teacher)-[:AUTHORED]->(p:Publication)<-[:AUTHORED]-(b:Teacher)
+            WHERE coalesce(a.id, a.teacher_id) < coalesce(b.id, b.teacher_id)
+            WITH
+                a,
+                b,
+                p,
+                [source IN split(coalesce(p.source, ""), ";") | trim(source)] AS source_names
+            WITH
+                a,
+                b,
+                p,
+                CASE
+                    WHEN coalesce(p.review_status, "") <> "" THEN p.review_status
+                    WHEN any(source_name IN source_names WHERE source_name IN ["Scopus", "Web of Science"]) THEN "Офіційно підтверджено"
+                    WHEN coalesce(p.confidence, 0.0) >= 0.9 THEN "Підтверджено"
+                    WHEN coalesce(p.confidence, 0.0) >= 0.72 THEN "Кандидат"
+                    ELSE "Потребує перевірки"
+                END AS resolved_status
+            WHERE
+                (
+                    $scope = "Усі записи"
+                    OR ($scope = "Підтверджені" AND resolved_status IN ["Офіційно підтверджено", "Підтверджено"])
+                    OR ($scope = "Офіційні" AND resolved_status = "Офіційно підтверджено")
+                )
+                AND (
+                    $year_from IS NULL
+                    OR ($year_to IS NOT NULL AND p.year IS NOT NULL AND p.year >= $year_from AND p.year <= $year_to)
+                )
+            WITH
+                a,
+                b,
+                count(DISTINCT p) AS weight
+            RETURN
+                coalesce(a.id, a.teacher_id) AS source_id,
+                coalesce(a.full_name, a.name) AS source_name,
+                coalesce(b.id, b.teacher_id) AS target_id,
+                coalesce(b.full_name, b.name) AS target_name,
+                weight
+            ORDER BY weight DESC, source_name ASC, target_name ASC
+            """
+            ,
+            {
+                "scope": scope,
+                "year_from": year_from,
+                "year_to": year_to,
+            },
+        )
+
     def get_teachers_analytics(
         self,
         *,
