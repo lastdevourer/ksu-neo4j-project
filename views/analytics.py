@@ -145,7 +145,7 @@ def _department_comparison_frame(rows: list[dict]) -> pd.DataFrame:
 
 def render() -> None:
     service = require_service()
-    render_header("Аналітика", "")
+    render_header("Аналітика", "Порівняльні зрізи, рейтинги, динаміка та звіти для факультетів, кафедр і викладачів.")
 
     controls = st.columns([0.85, 0.95, 0.55], gap="large")
     top_limit = controls[0].slider("Кількість записів у топах", min_value=5, max_value=20, value=10, step=1)
