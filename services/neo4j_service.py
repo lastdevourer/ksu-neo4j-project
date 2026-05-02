@@ -152,6 +152,7 @@ class Neo4jService:
                 publications_found: 0,
                 authorships_found: 0,
                 warnings_count: 0,
+                warning_details: '',
                 provider_summary: '',
                 error_message: '',
                 actor: $actor
@@ -178,6 +179,7 @@ class Neo4jService:
         publications_found: int = 0,
         authorships_found: int = 0,
         warnings_count: int = 0,
+        warning_details: str = "",
         provider_summary: str = "",
         error_message: str = "",
     ) -> bool:
@@ -196,6 +198,7 @@ class Neo4jService:
                 r.publications_found = $publications_found,
                 r.authorships_found = $authorships_found,
                 r.warnings_count = $warnings_count,
+                r.warning_details = $warning_details,
                 r.provider_summary = $provider_summary,
                 r.error_message = $error_message
             RETURN true AS ok
@@ -210,6 +213,7 @@ class Neo4jService:
                 "publications_found": max(int(publications_found or 0), 0),
                 "authorships_found": max(int(authorships_found or 0), 0),
                 "warnings_count": max(int(warnings_count or 0), 0),
+                "warning_details": warning_details.strip(),
                 "provider_summary": provider_summary.strip(),
                 "error_message": error_message.strip(),
             },
@@ -233,6 +237,7 @@ class Neo4jService:
                 coalesce(r.publications_found, 0) AS publications_found,
                 coalesce(r.authorships_found, 0) AS authorships_found,
                 coalesce(r.warnings_count, 0) AS warnings_count,
+                coalesce(r.warning_details, '') AS warning_details,
                 coalesce(r.provider_summary, '') AS provider_summary,
                 coalesce(r.error_message, '') AS error_message,
                 coalesce(r.actor, '') AS actor
