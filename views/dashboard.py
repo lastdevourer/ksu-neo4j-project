@@ -24,8 +24,8 @@ def _csv_bytes(frame):
 def render() -> None:
     service = require_service()
     render_header(
-        "Академічна мережа KSU",
-        subtitle="Оперативний огляд викладачів, публікацій, співавторства та структури університету.",
+        "Академічна аналітика KSU",
+        subtitle="Огляд структури університету, викладачів, публікацій і співавторства в одному просторі.",
     )
 
     counts = service.get_overview_counts()
