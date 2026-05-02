@@ -64,6 +64,12 @@ def get_admin_password() -> str:
     return _read_streamlit_secret("ADMIN_PASSWORD") or os.getenv("ADMIN_PASSWORD", "").strip()
 
 
+def is_presentation_mode() -> bool:
+    if "presentation_mode" in st.session_state:
+        return bool(st.session_state.get("presentation_mode", False))
+    return _read_bool_setting("PRESENTATION_MODE", default=False)
+
+
 def get_neo4j_config() -> Neo4jConfig | None:
     uri = _read_streamlit_secret("NEO4J_URI") or os.getenv("NEO4J_URI", "").strip()
     user = _read_streamlit_secret("NEO4J_USER") or os.getenv("NEO4J_USER", "").strip()
