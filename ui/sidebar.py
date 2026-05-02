@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from config import get_admin_password, is_admin_mode
+from config import get_admin_password, is_admin_mode, is_presentation_mode
 
 
 def render_sidebar(
@@ -23,6 +23,12 @@ def render_sidebar(
             </div>
             """,
             unsafe_allow_html=True,
+        )
+
+        st.toggle(
+            "Презентаційний світлий режим",
+            value=is_presentation_mode(),
+            key="presentation_mode",
         )
 
         for section_name in section_order:
