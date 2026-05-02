@@ -177,6 +177,13 @@ def _teacher_gap_frame(rows: list[dict[str, object]]) -> pd.DataFrame:
     return renamed[columns]
 
 
+def _import_run_option(row: dict[str, object]) -> str:
+    started_at = str(row.get("started_at") or "").strip() or "без часу"
+    status = str(row.get("status") or "").strip() or "невідомо"
+    source = str(row.get("source") or "").strip() or "Імпорт"
+    return f"{started_at} | {status} | {source}"
+
+
 def _normalized_duplicate_key(row: dict[str, object]) -> str:
     doi = str(row.get("doi") or "").strip().lower()
     if doi:
@@ -503,6 +510,50 @@ def _render_import_runs_tab(service) -> None:
         latest_error = str(latest.get("error_message") or "").strip()
         if latest_error:
             st.warning(f"Остання помилка: {latest_error}")
+
+    option_map = {_import_run_option(row): row for row in rows}
+    selected_label = st.selectbox(
+        "Обрати запуск для деталей",
+        list(option_map.keys()),
+        key="data_center_import_run_select",
+    )
+    selected_run = option_map[selected_label]
+
+    detail_columns = st.columns([0.92, 1.08], gap="large")
+    with detail_columns[0]:
+        render_key_value_card(
+            "Деталі запуску",
+            [
+                ("Статус", str(selected_run.get("status") or "")),
+                ("Джерело", str(selected_run.get("source") or "")),
+                ("Scholar як резерв", "Так" if bool(selected_run.get("include_scholar")) else "Ні"),
+                ("Заплановано викладачів", str(selected_run.get("teachers_planned") or 0)),
+                ("Оброблено викладачів", str(selected_run.get("teachers_processed") or 0)),
+                ("З роботами", str(selected_run.get("teachers_with_publications") or 0)),
+                ("Знайдено публікацій", str(selected_run.get("publications_found") or 0)),
+                ("Зв'язки авторства", str(selected_run.get("authorships_found") or 0)),
+            ],
+        )
+    with detail_columns[1]:
+        render_key_value_card(
+            "Якість і джерела",
+            [
+                ("Попередження", str(selected_run.get("warnings_count") or 0)),
+                ("Покриття джерел", str(selected_run.get("provider_summary") or "—")),
+                ("Початок", str(selected_run.get("started_at") or "")),
+                ("Завершення", str(selected_run.get("finished_at") or "—")),
+                ("Ініціатор", str(selected_run.get("actor") or "—")),
+            ],
+        )
+
+    warning_details = str(selected_run.get("warning_details") or "").strip()
+    error_message = str(selected_run.get("error_message") or "").strip()
+    if warning_details:
+        with st.expander("Попередження запуску", expanded=False):
+            st.text(warning_details)
+    if error_message:
+        with st.expander("Помилка запуску", expanded=True):
+            st.text(error_message)
 
 
 def _render_duplicate_candidates(service, all_publications: list[dict[str, object]]) -> None:
