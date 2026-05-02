@@ -24,10 +24,8 @@ from ui.formatters import (
     teachers_dataframe_public,
 )
 from utils.analytics import (
-    build_centrality_edges,
     build_diploma_summary,
     calculate_centrality_rows,
-    filter_publications_by_scope,
 )
 
 
@@ -97,21 +95,17 @@ def _load_analytics_snapshot(_service, scope: str, top_limit: int, year_range: t
             year_from=year_from,
             year_to=year_to,
         ),
+        "publication_count": _service.get_publication_count_analytics(
+            scope=scope,
+            year_from=year_from,
+            year_to=year_to,
+        ),
+        "centrality_edges": _service.get_centrality_edges_analytics(
+            scope=scope,
+            year_from=year_from,
+            year_to=year_to,
+        ),
     }
-
-def _filter_publications_by_year_range(publications: list[dict], year_range: tuple[int, int] | None) -> list[dict]:
-    if not year_range:
-        return publications
-    year_from, year_to = year_range
-    filtered: list[dict] = []
-    for row in publications:
-        try:
-            year = int(row.get("year"))
-        except (TypeError, ValueError):
-            year = None
-        if year is not None and year_from <= year <= year_to:
-            filtered.append(row)
-    return filtered
 
 
 def _department_label(row: dict) -> str:
@@ -153,9 +147,12 @@ def render() -> None:
     service = require_service()
     render_header("Аналітика", "")
 
-    controls = st.columns(2, gap="large")
+    controls = st.columns([0.85, 0.95, 0.55], gap="large")
     top_limit = controls[0].slider("Кількість записів у топах", min_value=5, max_value=20, value=10, step=1)
     scope = controls[1].selectbox("Контур даних", ["Усі записи", "Підтверджені", "Офіційні"])
+    if controls[2].button("Оновити аналітику", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
     available_years = service.get_publication_years()
     selected_year_range: tuple[int, int] | None = None
     if available_years:
@@ -172,21 +169,18 @@ def render() -> None:
 
     year_from = selected_year_range[0] if selected_year_range else None
     year_to = selected_year_range[1] if selected_year_range else None
-    all_teachers = service.get_teachers()
     analytics_snapshot = _load_analytics_snapshot(service, scope, top_limit, selected_year_range)
     scoped_teacher_rows = service.get_teachers_analytics(
         scope=scope,
         year_from=year_from,
         year_to=year_to,
     )
-    scoped_publications = filter_publications_by_scope(service.get_publications(), scope)
-    scoped_publications = _filter_publications_by_year_range(scoped_publications, selected_year_range)
     top_teachers = analytics_snapshot["top_teachers"]
     top_pairs = analytics_snapshot["top_pairs"]
-    centrality_rows = calculate_centrality_rows(build_centrality_edges(scoped_publications, all_teachers))[:top_limit]
+    centrality_rows = calculate_centrality_rows(analytics_snapshot["centrality_edges"])[:top_limit]
     profile_coverage = service.get_profile_coverage()
     source_rows = publication_sources_dataframe(analytics_snapshot["sources"])
-    scoped_publication_count = len(scoped_publications)
+    scoped_publication_count = int(analytics_snapshot["publication_count"])
     teachers_with_publications = sum(1 for row in scoped_teacher_rows if int(row.get("publications", 0) or 0) > 0)
     average_publications = (scoped_publication_count / teachers_with_publications) if teachers_with_publications else 0.0
 
