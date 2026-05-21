@@ -1550,7 +1550,11 @@ class Neo4jService:
                 CASE
                     WHEN size(linked_authors) > 0 THEN linked_authors
                     ELSE coalesce(p.authors_snapshot, [])
-                END AS authors
+                END AS authors,
+                CASE
+                    WHEN size(linked_authors) > 0 THEN size(linked_authors)
+                    ELSE size(coalesce(p.authors_snapshot, []))
+                END AS authors_count
             ORDER BY coalesce(p.year, 0) DESC, title
             """,
             {"teacher_id": teacher_id},
