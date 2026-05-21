@@ -127,6 +127,10 @@ def teacher_publications_dataframe_public(rows: list[dict]) -> pd.DataFrame:
     df = _frame(rows)
     if df.empty:
         return df
+    if "authors" not in df.columns:
+        df["authors"] = [[] for _ in range(len(df.index))]
+    if "authors_count" not in df.columns:
+        df["authors_count"] = df["authors"].apply(lambda value: len(value) if isinstance(value, list) else 0)
     df["authors"] = df["authors"].apply(_join_authors)
     renamed = df.rename(
         columns={
@@ -145,6 +149,8 @@ def teacher_publications_dataframe_admin(rows: list[dict]) -> pd.DataFrame:
     df = _frame(rows)
     if df.empty:
         return df
+    if "authors" not in df.columns:
+        df["authors"] = [[] for _ in range(len(df.index))]
     df["authors"] = df["authors"].apply(_join_authors)
     if "confidence" in df.columns:
         df["confidence"] = df["confidence"].apply(_format_confidence)
